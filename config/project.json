@@ -1,0 +1,11 @@
+{
+  "periods": ["202601", "202602", "202603", "202604", "202605", "202606"],
+  "special_document_types": ["其他入库单", "其他出库单"],
+  "amount_tolerance": 0.01,
+  "quantity_tolerance": 0.000001,
+  "posted_rule": "记账人非空",
+  "cost_rule": "仓库档案.记入成本=是",
+  "difference_direction": "U8金额-CAATS金额",
+  "continuous_rollforward_note": "从首月U8期初开始，后续月份采用上月CAATS期末；未模拟U8自动调整单和最终取价调整"
+}
+

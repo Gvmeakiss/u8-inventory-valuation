@@ -1,0 +1,8 @@
+node_modules
+staging/
+__pycache__/
+*.pyc
+*.inspect.ndjson
+*.png
+.DS_Store
+
