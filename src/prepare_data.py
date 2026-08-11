@@ -265,11 +265,109 @@ def build_transition_checks(
     return checks
 
 
-def build_continuous_summary(material_rows: list[dict[str, Any]], periods: list[str]) -> list[dict[str, Any]]:
+def build_complete_material_panel(
+    material_rows: list[dict[str, Any]],
+    periods: list[str],
+    movement_by_key: dict[tuple[str, str], dict[str, float]] | None = None,
+    quantity_tolerance: float = 0.000001,
+    amount_tolerance: float = 0.01,
+) -> list[dict[str, Any]]:
+    """从物料首次出现月份补齐至最终期间；缺月仅在确认无有效流水时按零收发承接。"""
+    movement_by_key = movement_by_key or {}
+    period_position = {month: index for index, month in enumerate(periods)}
+    rows_by_code: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in material_rows:
+        rows_by_code[row["code"]][row["month"]] = row
+
+    panel: list[dict[str, Any]] = []
+    for code in sorted(rows_by_code):
+        real_rows = rows_by_code[code]
+        first_position = min(period_position[month] for month in real_rows)
+        previous: dict[str, Any] | None = None
+        for month in periods[first_position:]:
+            real = real_rows.get(month)
+            if real is not None:
+                current = dict(real)
+                current["record_type"] = "原始月度记录"
+            else:
+                if previous is None:
+                    raise ValueError(f"补齐月份缺少前期记录：{month}/{code}")
+                movement = movement_by_key.get((month, code), {})
+                has_quantity = abs(movement.get("iq", 0.0)) > quantity_tolerance or abs(movement.get("oq", 0.0)) > quantity_tolerance
+                has_amount = abs(movement.get("ia", 0.0)) > amount_tolerance or abs(movement.get("oa", 0.0)) > amount_tolerance
+                if has_quantity or has_amount:
+                    raise ValueError(f"月度汇总缺行但CAATS存在有效收发，不能按零补齐：{month}/{code}")
+                current = dict(previous)
+                current.update(
+                    {
+                        "month": month,
+                        "source_file": "(补齐无收发月份)",
+                        "source_row": None,
+                        "record_type": "补齐无收发月份",
+                        "期初数量": previous["结存数量"],
+                        "期初金额": previous["结存金额"],
+                        "期初单价": previous["结存金额"] / previous["结存数量"] if abs(previous["结存数量"]) > 1e-12 else 0.0,
+                        "收入数量": 0.0,
+                        "收入单价": 0.0,
+                        "收入金额": 0.0,
+                        "发出数量": 0.0,
+                        "发出单价": 0.0,
+                        "发出金额": 0.0,
+                        "结存数量": previous["结存数量"],
+                        "结存金额": previous["结存金额"],
+                        "结存单价": previous["结存金额"] / previous["结存数量"] if abs(previous["结存数量"]) > 1e-12 else 0.0,
+                        "u8_original_income_quantity": 0.0,
+                        "u8_original_income_amount": 0.0,
+                        "u8_original_issue_quantity": 0.0,
+                        "u8_original_issue_amount": 0.0,
+                        "u8_original_end_quantity": previous["结存数量"],
+                        "u8_original_end_amount": previous["结存金额"],
+                        "excluded_iq": 0.0,
+                        "excluded_ia": 0.0,
+                        "excluded_oq": 0.0,
+                        "excluded_oa": 0.0,
+                        "excluded_rows": 0.0,
+                        "excluded_posted_iq": 0.0,
+                        "excluded_posted_ia": 0.0,
+                        "excluded_posted_oq": 0.0,
+                        "excluded_posted_oa": 0.0,
+                        "u8_filtered_income_quantity": 0.0,
+                        "u8_filtered_income_amount": 0.0,
+                        "u8_filtered_income_price": 0.0,
+                        "u8_filtered_issue_quantity": 0.0,
+                        "u8_filtered_issue_amount": 0.0,
+                        "u8_filtered_issue_price": 0.0,
+                        "u8_filtered_end_quantity": previous["结存数量"],
+                        "u8_filtered_end_amount": previous["结存金额"],
+                        "u8_filtered_end_price": previous["结存金额"] / previous["结存数量"] if abs(previous["结存数量"]) > 1e-12 else 0.0,
+                        "filtered_ledger_iq": 0.0,
+                        "filtered_ledger_ia": 0.0,
+                        "filtered_ledger_oq": 0.0,
+                        "filtered_ledger_oa": 0.0,
+                        "caats_avg": previous["结存金额"] / previous["结存数量"] if abs(previous["结存数量"]) > 1e-12 else 0.0,
+                        "caats_issue": 0.0,
+                        "issue_diff": 0.0,
+                        "caats_end": previous["结存金额"],
+                        "end_diff": 0.0,
+                        "income_amount_gap": 0.0,
+                        "issue_amount_gap": 0.0,
+                        "reason": "补齐无收发月份；期初期末承接上期",
+                        "status": "PASS",
+                    }
+                )
+            panel.append(current)
+            previous = current
+    return panel
+
+
+def build_continuous_analysis(
+    material_rows: list[dict[str, Any]], periods: list[str], amount_tolerance: float = 0.01
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     row_by_key = {(row["month"], row["code"]): row for row in material_rows}
     codes = sorted({row["code"] for row in material_rows})
     rolled: dict[str, dict[str, Any]] = {}
     result: list[dict[str, Any]] = []
+    detail: list[dict[str, Any]] = []
     for month_position, month in enumerate(periods):
         u8_issue = 0.0
         independent_caats_issue = 0.0
@@ -303,6 +401,38 @@ def build_continuous_summary(material_rows: list[dict[str, Any]], periods: list[
             end_amount = begin_amount + caats_income_amount - calculated_issue
             issue_difference = record["u8_filtered_issue_amount"] - calculated_issue
             end_difference = record["u8_filtered_end_amount"] - end_amount
+            # 兼容仅用于滚算单元测试/复用的精简记录；正式数据均显式提供U8剔除后收入金额。
+            u8_filtered_income_amount = record.get("u8_filtered_income_amount", record.get("filtered_ledger_ia", 0.0))
+            income_difference = u8_filtered_income_amount - record["filtered_ledger_ia"]
+            begin_difference = record["期初金额"] - begin_amount
+            rollforward_check = begin_difference + income_difference - issue_difference - end_difference
+            detail.append(
+                {
+                    "month": month,
+                    "code": record["code"],
+                    "name": record.get("name", ""),
+                    "spec": record.get("spec", ""),
+                    "u8_begin_quantity": record["期初数量"],
+                    "u8_begin_amount": record["期初金额"],
+                    "continuous_begin_quantity": begin_quantity,
+                    "continuous_begin_amount": begin_amount,
+                    "continuous_begin_difference": begin_difference,
+                    "income_amount_difference": income_difference,
+                    "u8_filtered_issue_amount": record["u8_filtered_issue_amount"],
+                    "continuous_caats_issue": calculated_issue,
+                    "continuous_issue_difference": issue_difference,
+                    "u8_filtered_end_amount": record["u8_filtered_end_amount"],
+                    "continuous_caats_end": end_amount,
+                    "continuous_end_difference": end_difference,
+                    "rollforward_check": rollforward_check,
+                    "rollforward_status": "PASS" if within_amount_tolerance(rollforward_check, amount_tolerance) else "REVIEW",
+                    "continuous_average": average,
+                    "continuous_end_quantity": end_quantity,
+                    "status": "PASS" if within_amount_tolerance(issue_difference, amount_tolerance) else "REVIEW",
+                    "start_type": "承接最近可追溯连续期末" if can_roll else "使用U8期初",
+                    "record_type": record.get("record_type", "原始月度记录"),
+                }
+            )
             u8_issue += record["u8_filtered_issue_amount"]
             independent_caats_issue += record["caats_issue"]
             independent_difference += record["issue_diff"]
@@ -330,6 +460,11 @@ def build_continuous_summary(material_rows: list[dict[str, Any]], periods: list[
                 "resets": resets,
             }
         )
+    return result, detail
+
+
+def build_continuous_summary(material_rows: list[dict[str, Any]], periods: list[str]) -> list[dict[str, Any]]:
+    result, _ = build_continuous_analysis(material_rows, periods)
     return result
 
 
@@ -728,7 +863,21 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     transition_checks = build_transition_checks(summaries, periods, quantity_tolerance, amount_tolerance)
-    continuous_monthly = build_continuous_summary(material_rows, periods)
+    movement_by_key = {
+        key: {
+            "iq": aggregate.get("iq", 0) - aggregate.get("excluded_posted_iq", 0),
+            "ia": aggregate.get("ia", 0) - aggregate.get("excluded_posted_ia", 0),
+            "oq": aggregate.get("oq", 0) - aggregate.get("excluded_posted_oq", 0),
+            "oa": aggregate.get("oa", 0) - aggregate.get("excluded_posted_oa", 0),
+        }
+        for key, aggregate in material_aggregate.items()
+    }
+    continuous_material_rows = build_complete_material_panel(
+        material_rows, periods, movement_by_key, quantity_tolerance, amount_tolerance
+    )
+    continuous_monthly, continuous_rows = build_continuous_analysis(continuous_material_rows, periods, amount_tolerance)
+    final_month = periods[-1]
+    final_rows = [row for row in continuous_rows if row["month"] == final_month]
     offset_rows, offset_summary = build_offset_rows(offset_material_rows, warehouse_rows, quantity_tolerance, amount_tolerance)
     positive_difference = sum(max(row["issue_diff"], 0.0) for row in material_rows)
     negative_difference_abs = sum(max(-row["issue_diff"], 0.0) for row in material_rows)
@@ -749,6 +898,14 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "abs_issue_diff": sum(abs(row["issue_diff"]) for row in material_rows),
         "max_abs_issue_diff": max(abs(row["issue_diff"]) for row in material_rows),
         "amount_gap_rows": sum(abs(row["income_amount_gap"]) > amount_tolerance or abs(row["issue_amount_gap"]) > amount_tolerance for row in material_rows),
+        "continuous_panel_rows": len(continuous_material_rows),
+        "continuous_synthetic_rows": sum(row.get("record_type") == "补齐无收发月份" for row in continuous_material_rows),
+        "final_material_rows": len(final_rows),
+        "final_synthetic_rows": sum(row["record_type"] == "补齐无收发月份" for row in final_rows),
+        "final_u8_end_amount": sum(row["u8_filtered_end_amount"] for row in final_rows),
+        "final_caats_end_amount": sum(row["continuous_caats_end"] for row in final_rows),
+        "final_end_difference": sum(row["continuous_end_difference"] for row in final_rows),
+        "rollforward_review_rows": sum(row["rollforward_status"] == "REVIEW" for row in continuous_rows),
         "excluded_movement_categories": sorted(excluded_movement_categories),
         "excluded_movement_rows": int(sum(value.get("rows", 0) for value in excluded_category_aggregate.values())),
         "excluded_movement_iq": sum(value.get("iq", 0) for value in excluded_category_aggregate.values()),
@@ -772,6 +929,12 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "metrics": metrics,
         "monthly": monthly,
         "continuous_monthly": continuous_monthly,
+        "continuous_material_rows": continuous_material_rows,
+        "continuous_difference_rows": sorted(
+            (row for row in continuous_rows if row["status"] == "REVIEW"),
+            key=lambda row: abs(row["continuous_issue_difference"]),
+            reverse=True,
+        ),
         "transition_checks": transition_checks,
         "offset_rows": offset_rows,
         "offset_summary": offset_summary,

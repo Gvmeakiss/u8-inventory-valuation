@@ -98,6 +98,60 @@ class CalculationTests(unittest.TestCase):
         self.assertAlmostEqual(result[2]["continuous_caats_issue"], 55)
         self.assertAlmostEqual(result[2]["continuous_difference"], 5)
 
+    def test_continuous_difference_detail_matches_rollforward_status(self):
+        rows = [
+            {
+                "month": "202601", "code": "A", "name": "物料A", "spec": "S", "期初数量": 10, "期初金额": 100,
+                "caats_issue": 20, "issue_diff": 5,
+                "u8_filtered_issue_amount": 25, "u8_filtered_end_amount": 75,
+                "filtered_ledger_iq": 0, "filtered_ledger_ia": 0, "filtered_ledger_oq": 2,
+            },
+            {
+                "month": "202603", "code": "A", "name": "物料A", "spec": "S", "期初数量": 99, "期初金额": 990,
+                "caats_issue": 50.4950495, "issue_diff": 9.5049505,
+                "u8_filtered_issue_amount": 60, "u8_filtered_end_amount": 960,
+                "filtered_ledger_iq": 2, "filtered_ledger_ia": 30, "filtered_ledger_oq": 5,
+            },
+        ]
+        summary, detail = MODULE.build_continuous_analysis(rows, ["202601", "202602", "202603"], 0.01)
+        self.assertEqual(len(detail), 2)
+        self.assertEqual(detail[1]["start_type"], "承接最近可追溯连续期末")
+        self.assertAlmostEqual(detail[1]["continuous_begin_amount"], 80)
+        self.assertAlmostEqual(detail[1]["continuous_issue_difference"], summary[2]["continuous_difference"])
+        self.assertEqual(detail[1]["status"], "REVIEW")
+
+    def test_complete_panel_fills_zero_movement_months_through_final_period(self):
+        rows = [
+            {
+                "month": "202601", "code": "A", "name": "物料A", "spec": "S", "unit": "件",
+                "期初数量": 10, "期初单价": 10, "期初金额": 100,
+                "收入数量": 0, "收入单价": 0, "收入金额": 0,
+                "发出数量": 10, "发出单价": 10, "发出金额": 100,
+                "结存数量": 0, "结存单价": 0, "结存金额": 0,
+                "u8_filtered_income_amount": 0, "u8_filtered_issue_amount": 100,
+                "u8_filtered_end_quantity": 0, "u8_filtered_end_amount": 0,
+                "filtered_ledger_iq": 0, "filtered_ledger_ia": 0, "filtered_ledger_oq": 10, "filtered_ledger_oa": 100,
+            }
+        ]
+        panel = MODULE.build_complete_material_panel(rows, ["202601", "202602", "202603"])
+        self.assertEqual(len(panel), 3)
+        self.assertEqual(panel[-1]["month"], "202603")
+        self.assertEqual(panel[-1]["record_type"], "补齐无收发月份")
+        self.assertEqual(panel[-1]["发出金额"], 0)
+        self.assertEqual(panel[-1]["结存金额"], 0)
+
+    def test_continuous_amount_rollforward_check_includes_income_scope_difference(self):
+        row = {
+            "month": "202601", "code": "A", "name": "物料A", "spec": "S", "期初数量": 10, "期初金额": 100,
+            "caats_issue": 55, "issue_diff": 5,
+            "u8_filtered_income_amount": 20, "u8_filtered_issue_amount": 60, "u8_filtered_end_amount": 60,
+            "filtered_ledger_iq": 0, "filtered_ledger_ia": 10, "filtered_ledger_oq": 5,
+        }
+        _, detail = MODULE.build_continuous_analysis([row], ["202601"], 0.01)
+        self.assertAlmostEqual(detail[0]["income_amount_difference"], 10)
+        self.assertAlmostEqual(detail[0]["rollforward_check"], 0)
+        self.assertEqual(detail[0]["rollforward_status"], "PASS")
+
     def test_cross_warehouse_offset(self):
         material = [{
             "month": "202601", "code": "A", "name": "物料A", "spec": "", "unit": "件",
