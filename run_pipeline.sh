@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h}
-RUN_ID=${1:-u8_caats_202601_202606_v2}
+RUN_ID=${1:-u8_caats_202601_202606_v8_final_rollforward}
 WAREHOUSE_MASTER=${2:-/Users/aatrox/Downloads/仓库档案.XLS}
 OUTPUT_DIR=${PROJECT_ROOT}/outputs/${RUN_ID}
 STAGING_DIR=${SCRIPT_DIR}/staging/${RUN_ID}
