@@ -12,6 +12,36 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CalculationTests(unittest.TestCase):
+    def test_movement_exclusions_preserve_u8_summary_and_store_caats_inputs(self):
+        record = {
+            "期初数量": 10, "期初单价": 10, "期初金额": 100,
+            "收入数量": 8, "收入单价": 15, "收入金额": 120,
+            "发出数量": 7, "发出单价": 14, "发出金额": 98,
+            "结存数量": 11, "结存单价": 11.090909, "结存金额": 122,
+        }
+        result = MODULE.apply_movement_exclusions(
+            record,
+            {"iq": 5, "ia": 75, "oq": 5, "oa": 70},
+            {"rows": 2, "iq": 3, "ia": 45, "oq": 2, "oa": 28},
+        )
+        self.assertEqual(result["收入数量"], 8)
+        self.assertEqual(result["收入金额"], 120)
+        self.assertEqual(result["发出数量"], 7)
+        self.assertEqual(result["发出金额"], 98)
+        self.assertEqual(result["结存数量"], 11)
+        self.assertEqual(result["结存金额"], 122)
+        self.assertEqual(result["filtered_ledger_iq"], 5)
+        self.assertEqual(result["filtered_ledger_ia"], 75)
+        self.assertEqual(result["filtered_ledger_oq"], 5)
+        self.assertEqual(result["filtered_ledger_oa"], 70)
+        self.assertEqual(result["u8_original_end_amount"], 122)
+        self.assertEqual(result["u8_filtered_income_quantity"], 5)
+        self.assertEqual(result["u8_filtered_income_amount"], 75)
+        self.assertEqual(result["u8_filtered_issue_quantity"], 5)
+        self.assertEqual(result["u8_filtered_issue_amount"], 70)
+        self.assertEqual(result["u8_filtered_end_quantity"], 10)
+        self.assertEqual(result["u8_filtered_end_amount"], 105)
+
     def test_cent_tolerance_ignores_floating_point_tail(self):
         difference = 0.010000000000218279
         self.assertTrue(MODULE.within_amount_tolerance(difference, 0.01))
@@ -31,11 +61,15 @@ class CalculationTests(unittest.TestCase):
                 "month": "202601", "code": "A", "期初数量": 10, "期初金额": 100,
                 "收入数量": 10, "收入金额": 200, "发出数量": 5, "发出金额": 80,
                 "结存金额": 220, "caats_issue": 75, "issue_diff": 5,
+                "u8_filtered_issue_amount": 80, "u8_filtered_end_amount": 220,
+                "filtered_ledger_iq": 10, "filtered_ledger_ia": 200, "filtered_ledger_oq": 5, "filtered_ledger_oa": 80,
             },
             {
                 "month": "202602", "code": "A", "期初数量": 15, "期初金额": 220,
                 "收入数量": 5, "收入金额": 100, "发出数量": 10, "发出金额": 160,
                 "结存金额": 160, "caats_issue": 160, "issue_diff": 0,
+                "u8_filtered_issue_amount": 160, "u8_filtered_end_amount": 160,
+                "filtered_ledger_iq": 5, "filtered_ledger_ia": 100, "filtered_ledger_oq": 10, "filtered_ledger_oa": 160,
             },
         ]
         result = MODULE.build_continuous_summary(rows, ["202601", "202602"])
@@ -49,11 +83,15 @@ class CalculationTests(unittest.TestCase):
                 "month": "202601", "code": "A", "期初数量": 10, "期初金额": 100,
                 "收入数量": 0, "收入金额": 0, "发出数量": 2, "发出金额": 25,
                 "结存金额": 75, "caats_issue": 20, "issue_diff": 5,
+                "u8_filtered_issue_amount": 25, "u8_filtered_end_amount": 75,
+                "filtered_ledger_iq": 0, "filtered_ledger_ia": 0, "filtered_ledger_oq": 2, "filtered_ledger_oa": 25,
             },
             {
                 "month": "202603", "code": "A", "期初数量": 99, "期初金额": 990,
                 "收入数量": 2, "收入金额": 30, "发出数量": 5, "发出金额": 60,
                 "结存金额": 960, "caats_issue": 50.4950495, "issue_diff": 9.5049505,
+                "u8_filtered_issue_amount": 60, "u8_filtered_end_amount": 960,
+                "filtered_ledger_iq": 2, "filtered_ledger_ia": 30, "filtered_ledger_oq": 5, "filtered_ledger_oa": 60,
             },
         ]
         result = MODULE.build_continuous_summary(rows, ["202601", "202602", "202603"])
