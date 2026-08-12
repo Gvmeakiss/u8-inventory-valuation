@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h}
-RUN_ID=${1:-u8_caats_202601_202606_v8_final_rollforward}
+RUN_ID=${1:-u8_caats_202601_202606_v9_exclusion_bridge}
 WAREHOUSE_MASTER=${2:-/Users/aatrox/Downloads/仓库档案.XLS}
 OUTPUT_DIR=${PROJECT_ROOT}/outputs/${RUN_ID}
 STAGING_DIR=${SCRIPT_DIR}/staging/${RUN_ID}
@@ -24,7 +24,7 @@ ln -sfn "${U8_NODE_MODULES}" "${SCRIPT_DIR}/node_modules"
   --staging-dir "${STAGING_DIR}" \
   --output-json "${STAGING_DIR}/prepared_data.json"
 
-for BUILD_PART in caats ita; do
+for BUILD_PART in caats ita excluded; do
   U8_PROJECT_ROOT="${PROJECT_ROOT}" \
   U8_OUTPUT_DIR="${OUTPUT_DIR}" \
   U8_QA_DIR="${STAGING_DIR}/qa" \

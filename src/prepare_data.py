@@ -570,7 +570,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     headers = list(next(rows))
     ledger_index = required_columns(
         headers,
-        ["日期", "单据类型", "单据号", "仓库", "存货编码", "收发类别", "记账人", "入库数量", "入库金额", "出库数量", "出库金额"],
+        ["日期", "单据类型", "单据号", "仓库", "存货编码", "存货名称", "规格型号", "收发类别", "记账人", "入库数量", "入库单价", "入库金额", "出库数量", "出库单价", "出库金额"],
         ledger_path.name,
     )
 
@@ -582,10 +582,12 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     warehouse_document_types: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     group_aggregate: dict[tuple[str, str, str], defaultdict[str, float]] = defaultdict(lambda: defaultdict(float))
     group_categories: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    excluded_income_details: list[dict[str, Any]] = []
+    excluded_issue_details: list[dict[str, Any]] = []
     valid_rows = posted_cost_rows = unposted_rows = no_cost_rows = 0
     missing_master: set[str] = set()
 
-    for row in rows:
+    for source_row, row in enumerate(rows, start=3):
         if row[ledger_index["存货编码"]] in (None, "") or row[ledger_index["日期"]] in (None, ""):
             continue
         valid_rows += 1
@@ -650,6 +652,40 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             for aggregate, key in ((material_aggregate, material_key), (warehouse_aggregate, warehouse_key)):
                 for name, value in (("excluded_posted_rows", 1), ("excluded_posted_iq", inbound_quantity), ("excluded_posted_ia", inbound_amount), ("excluded_posted_oq", outbound_quantity), ("excluded_posted_oa", outbound_amount)):
                     aggregate[key][name] += value
+            common_detail = {
+                "month": month,
+                "date": text(row[ledger_index["日期"]])[:10],
+                "document_type": document_type,
+                "document_number": text(row[ledger_index["单据号"]]),
+                "warehouse_code": warehouse_master["仓库编码"],
+                "warehouse": warehouse,
+                "warehouse_group": text(warehouse_master.get("仓库核算组")),
+                "code": code,
+                "name": text(row[ledger_index.get("存货名称")]) if "存货名称" in ledger_index else "",
+                "spec": text(row[ledger_index.get("规格型号")]) if "规格型号" in ledger_index else "",
+                "category": category,
+                "posted_by": text(row[ledger_index["记账人"]]),
+                "source_file": ledger_path.name,
+                "source_row": source_row,
+            }
+            if abs(inbound_quantity) > quantity_tolerance or abs(inbound_amount) > amount_tolerance:
+                excluded_income_details.append(
+                    {
+                        **common_detail,
+                        "quantity": inbound_quantity,
+                        "unit_price": number(row[ledger_index.get("入库单价")]) if "入库单价" in ledger_index else 0.0,
+                        "amount": inbound_amount,
+                    }
+                )
+            if abs(outbound_quantity) > quantity_tolerance or abs(outbound_amount) > amount_tolerance:
+                excluded_issue_details.append(
+                    {
+                        **common_detail,
+                        "quantity": outbound_quantity,
+                        "unit_price": number(row[ledger_index.get("出库单价")]) if "出库单价" in ledger_index else 0.0,
+                        "amount": outbound_amount,
+                    }
+                )
         is_special = document_type in special_document_types
         if is_special:
             for name, value in (("special_rows", 1), ("special_iq", inbound_quantity), ("special_ia", inbound_amount), ("special_oq", outbound_quantity), ("special_oa", outbound_amount)):
@@ -912,11 +948,20 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "excluded_movement_ia": sum(value.get("ia", 0) for value in excluded_category_aggregate.values()),
         "excluded_movement_oq": sum(value.get("oq", 0) for value in excluded_category_aggregate.values()),
         "excluded_movement_oa": sum(value.get("oa", 0) for value in excluded_category_aggregate.values()),
+        "excluded_income_detail_rows": len(excluded_income_details),
+        "excluded_income_detail_quantity": sum(row["quantity"] for row in excluded_income_details),
+        "excluded_income_detail_amount": sum(row["amount"] for row in excluded_income_details),
+        "excluded_issue_detail_rows": len(excluded_issue_details),
+        "excluded_issue_detail_quantity": sum(row["quantity"] for row in excluded_issue_details),
+        "excluded_issue_detail_amount": sum(row["amount"] for row in excluded_issue_details),
         "positive_issue_diff": positive_difference,
         "negative_issue_diff_abs": negative_difference_abs,
         "global_netting": min(positive_difference, negative_difference_abs),
         "scope_issue_difference": scope_issue_difference,
         "repricing_issue_difference": repricing_issue_difference,
+        "excluded_income_quantity_bridge": sum(row["收入数量"] - row["u8_filtered_income_quantity"] for row in material_rows),
+        "excluded_income_amount_bridge": sum(row["收入金额"] - row["u8_filtered_income_amount"] for row in material_rows),
+        "excluded_issue_quantity_bridge": sum(row["发出数量"] - row["u8_filtered_issue_quantity"] for row in material_rows),
         "excluded_issue_bridge": sum(row["发出金额"] - row["u8_filtered_issue_amount"] for row in material_rows),
     }
     input_files = [ledger_path, warehouse_master_source, *summary_sources, project_root / "CAATS交付模板.xlsx"]
@@ -947,6 +992,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "warehouse_rows": warehouse_rows,
         "group_rows": group_rows,
         "master": master,
+        "excluded_income_details": excluded_income_details,
+        "excluded_issue_details": excluded_issue_details,
         "excluded_movement_breakdown": [
             {
                 "category": category,
