@@ -1,11 +1,11 @@
 {
   "periods": ["202601", "202602", "202603", "202604", "202605", "202606"],
   "special_document_types": ["其他入库单", "其他出库单"],
+  "excluded_movement_categories": ["调拨出库", "调拨入库", "借出借用出库", "借用归还入库"],
   "amount_tolerance": 0.01,
   "quantity_tolerance": 0.000001,
   "posted_rule": "记账人非空",
   "cost_rule": "仓库档案.记入成本=是",
-  "difference_direction": "U8金额-CAATS金额",
-  "continuous_rollforward_note": "从首月U8期初开始，后续月份采用上月CAATS期末；未模拟U8自动调整单和最终取价调整"
+  "difference_direction": "用友U8月度金额（剔除四类后）-CAATS金额",
+  "continuous_rollforward_note": "首次出现使用U8期初，后续采用最近可追溯CAATS期末；本期收发剔除四类移动；未模拟U8自动调整单和最终取价调整"
 }
-

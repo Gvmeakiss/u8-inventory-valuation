@@ -12,6 +12,14 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CalculationTests(unittest.TestCase):
+    def test_financial_ledger_period_uses_posting_date_value(self):
+        self.assertEqual(MODULE.month_from_date_value("2026/6/30", "记账日期"), "202606")
+        self.assertEqual(MODULE.month_from_date_value("2026-02-28", "记账日期"), "202602")
+
+    def test_financial_ledger_document_type_is_inferred_from_voucher_summary(self):
+        self.assertEqual(MODULE.infer_document_type("其他出库单 IO26010001", "盘亏出库"), "其他出库单")
+        self.assertEqual(MODULE.infer_document_type("调拨单 DB26010001", "调拨入库"), "调拨单")
+
     def test_movement_exclusions_preserve_u8_summary_and_store_caats_inputs(self):
         record = {
             "期初数量": 10, "期初单价": 10, "期初金额": 100,

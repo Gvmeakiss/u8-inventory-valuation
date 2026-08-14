@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""读取U8原始导出，形成可供artifact-tool生成工作簿的标准JSON。"""
+"""读取U8财务核算流水账，形成可供artifact-tool生成工作簿的标准JSON。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import math
 import re
 import subprocess
 from collections import defaultdict
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -38,6 +39,45 @@ def text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def month_from_date_value(value: Any, label: str) -> str:
+    """从U8日期值识别YYYYMM；财务核算版期间只允许由记账日期产生。"""
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%Y%m")
+    raw = text(value)
+    match = re.fullmatch(r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})(?:\s+.*)?", raw)
+    if not match:
+        raise ValueError(f"{label}无法识别日期：{raw!r}")
+    year, month, day = (int(part) for part in match.groups())
+    datetime(year, month, day)
+    return f"{year:04d}{month:02d}"
+
+
+def normalized_date(value: Any, label: str) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%Y-%m-%d")
+    raw = text(value)
+    match = re.fullmatch(r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})(?:\s+.*)?", raw)
+    if not match:
+        raise ValueError(f"{label}无法识别日期：{raw!r}")
+    year, month, day = (int(part) for part in match.groups())
+    parsed = datetime(year, month, day)
+    return parsed.strftime("%Y-%m-%d")
+
+
+def infer_document_type(summary: Any, business_type: Any) -> str:
+    """从凭证摘要提取U8单据类型；业务类型仍单独作为移动方式字段。"""
+    raw = text(summary)
+    candidates = (
+        "其他入库单", "其他出库单", "销售出库单", "采购入库单", "产成品入库单",
+        "材料出库单", "调拨单", "红字回冲单", "蓝字回冲单", "出库调整单",
+        "调整出库调整单", "变更申请单",
+    )
+    for candidate in candidates:
+        if candidate in raw:
+            return candidate
+    return text(business_type)
+
+
 def within_amount_tolerance(value: float, tolerance: float) -> bool:
     """按可审计精度消除二进制浮点尾差后判断金额容差。"""
     return abs(round(value, 10)) <= tolerance
@@ -49,7 +89,7 @@ def apply_movement_exclusions(
     excluded: dict[str, float],
     excluded_posted: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """保留U8月表原值，建立四类移动剔除桥，并记录CAATS筛选后流水。"""
+    """保留U8月表原值，建立调拨出入库剔除桥，并记录CAATS筛选后流水。"""
     item = dict(record)
     excluded_posted = excluded if excluded_posted is None else excluded_posted
     original_fields = {
@@ -149,7 +189,9 @@ def convert_xls(source: Path, output_dir: Path, soffice: Path) -> Path:
     return target
 
 
-def read_master(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+def read_master(path: Path) -> tuple[
+    list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, dict[str, Any]]
+]:
     workbook = load_workbook(path, read_only=True, data_only=True)
     worksheet = workbook.active
     rows = worksheet.iter_rows(values_only=True)
@@ -161,6 +203,7 @@ def read_master(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, A
     )
     master: list[dict[str, Any]] = []
     by_name: dict[str, dict[str, Any]] = {}
+    by_code: dict[str, dict[str, Any]] = {}
     for row in rows:
         if row[index["仓库编码"]] in (None, ""):
             continue
@@ -173,8 +216,11 @@ def read_master(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, A
         master.append(record)
         if record["仓库名称"] in by_name:
             raise ValueError(f"仓库档案仓库名称重复：{record['仓库名称']}")
+        if record["仓库编码"] in by_code:
+            raise ValueError(f"仓库档案仓库编码重复：{record['仓库编码']}")
         by_name[record["仓库名称"]] = record
-    return master, by_name
+        by_code[record["仓库编码"]] = record
+    return master, by_name, by_code
 
 
 def read_summaries(paths: list[Path], periods: list[str]) -> tuple[list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:
@@ -554,14 +600,15 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     special_document_types = set(config["special_document_types"])
     excluded_movement_categories = set(config.get("excluded_movement_categories", []))
 
-    ledger_path = (args.ledger or project_root / "仓库管理-出入库流水账-2026.01-06.xlsx").resolve()
-    summary_dir = (args.summary_dir or project_root / "收发存汇总").resolve()
+    input_dir = project_root / "input" / "current"
+    ledger_path = (args.ledger or input_dir / "财务核算-流水账 记账日期-2026.01-.06.xlsx").resolve()
+    summary_dir = (args.summary_dir or input_dir / "收发存汇总").resolve()
     warehouse_master_source = args.warehouse_master.resolve()
     warehouse_master_path = convert_xls(warehouse_master_source, converted_dir / "warehouse_master", args.soffice)
     summary_sources = sorted(path for path in summary_dir.iterdir() if path.suffix.lower() in {".xls", ".xlsx"})
     converted_summaries = [convert_xls(path, converted_dir / "summaries", args.soffice) for path in summary_sources]
 
-    master, master_by_name = read_master(warehouse_master_path)
+    master, master_by_name, master_by_code = read_master(warehouse_master_path)
     summaries, summary_by_key = read_summaries(converted_summaries, periods)
 
     workbook = load_workbook(ledger_path, read_only=True, data_only=True)
@@ -570,7 +617,11 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     headers = list(next(rows))
     ledger_index = required_columns(
         headers,
-        ["日期", "单据类型", "单据号", "仓库", "存货编码", "存货名称", "规格型号", "收发类别", "记账人", "入库数量", "入库单价", "入库金额", "出库数量", "出库单价", "出库金额"],
+        [
+            "单据日期", "单据号", "记账日期", "记账人", "凭证号", "凭证摘要", "业务类型",
+            "仓库编码", "仓库", "存货编码", "存货名称", "规格型号", "主计量单位",
+            "收入数量", "收入单价", "收入金额", "发出数量", "发出单价", "发出金额", "成本来源",
+        ],
         ledger_path.name,
     )
 
@@ -585,23 +636,29 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     excluded_income_details: list[dict[str, Any]] = []
     excluded_issue_details: list[dict[str, Any]] = []
     valid_rows = posted_cost_rows = unposted_rows = no_cost_rows = 0
+    posting_document_month_mismatch_rows = 0
+    warehouse_name_mismatch_rows = 0
     missing_master: set[str] = set()
 
     for source_row, row in enumerate(rows, start=3):
-        if row[ledger_index["存货编码"]] in (None, "") or row[ledger_index["日期"]] in (None, ""):
+        if row[ledger_index["存货编码"]] in (None, "") or row[ledger_index["记账日期"]] in (None, ""):
             continue
         valid_rows += 1
-        month = text(row[ledger_index["日期"]])[:7].replace("-", "")
+        month = month_from_date_value(row[ledger_index["记账日期"]], f"{ledger_path.name}第{source_row}行记账日期")
         if month not in periods:
             continue
+        document_month = month_from_date_value(row[ledger_index["单据日期"]], f"{ledger_path.name}第{source_row}行单据日期")
+        if document_month != month:
+            posting_document_month_mismatch_rows += 1
         code = text(row[ledger_index["存货编码"]])
+        warehouse_code = text(row[ledger_index["仓库编码"]])
         warehouse = text(row[ledger_index["仓库"]])
-        category = text(row[ledger_index["收发类别"]])
-        document_type = text(row[ledger_index["单据类型"]])
-        inbound_quantity = number(row[ledger_index["入库数量"]])
-        inbound_amount = number(row[ledger_index["入库金额"]])
-        outbound_quantity = number(row[ledger_index["出库数量"]])
-        outbound_amount = number(row[ledger_index["出库金额"]])
+        category = text(row[ledger_index["业务类型"]])
+        document_type = infer_document_type(row[ledger_index["凭证摘要"]], category)
+        inbound_quantity = number(row[ledger_index["收入数量"]])
+        inbound_amount = number(row[ledger_index["收入金额"]])
+        outbound_quantity = number(row[ledger_index["发出数量"]])
+        outbound_amount = number(row[ledger_index["发出金额"]])
         material_key = (month, code)
         if category in excluded_movement_categories:
             excluded = excluded_material_aggregate[material_key]
@@ -616,10 +673,15 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             category_total["ia"] += inbound_amount
             category_total["oq"] += outbound_quantity
             category_total["oa"] += outbound_amount
-        warehouse_master = master_by_name.get(warehouse)
+        warehouse_master = master_by_code.get(warehouse_code)
         if warehouse_master is None:
-            missing_master.add(warehouse)
+            missing_master.add(f"{warehouse_code}|{warehouse}")
             continue
+        if warehouse_master["仓库名称"] != warehouse:
+            warehouse_name_mismatch_rows += 1
+            raise ValueError(
+                f"仓库编码与名称不一致：流水={warehouse_code}|{warehouse}，档案={warehouse_master['仓库名称']}"
+            )
         posted = row[ledger_index["记账人"]] not in (None, "")
         costed = warehouse_master.get("记入成本") == "是"
         warehouse_key = (month, warehouse, code)
@@ -654,7 +716,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                     aggregate[key][name] += value
             common_detail = {
                 "month": month,
-                "date": text(row[ledger_index["日期"]])[:10],
+                "date": normalized_date(row[ledger_index["记账日期"]], f"第{source_row}行记账日期"),
+                "posting_date": normalized_date(row[ledger_index["记账日期"]], f"第{source_row}行记账日期"),
+                "document_date": normalized_date(row[ledger_index["单据日期"]], f"第{source_row}行单据日期"),
                 "document_type": document_type,
                 "document_number": text(row[ledger_index["单据号"]]),
                 "warehouse_code": warehouse_master["仓库编码"],
@@ -673,7 +737,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                     {
                         **common_detail,
                         "quantity": inbound_quantity,
-                        "unit_price": number(row[ledger_index.get("入库单价")]) if "入库单价" in ledger_index else 0.0,
+                        "unit_price": number(row[ledger_index["收入单价"]]),
                         "amount": inbound_amount,
                     }
                 )
@@ -682,7 +746,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                     {
                         **common_detail,
                         "quantity": outbound_quantity,
-                        "unit_price": number(row[ledger_index.get("出库单价")]) if "出库单价" in ledger_index else 0.0,
+                        "unit_price": number(row[ledger_index["发出单价"]]),
                         "amount": outbound_amount,
                     }
                 )
@@ -755,7 +819,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         issue_gap = record["发出金额"] - aggregate.get("oa", 0)
         multi_price = len(issue_warehouses_by_material.get(key, set())) > 1 and minimum_price is not None and maximum_price is not None and abs(maximum_price - minimum_price) > amount_tolerance
         if multi_price:
-            reason = "跨仓价格混合（已剔除四类移动）"
+            reason = "跨仓价格混合（已剔除调拨出入库）"
         elif within_amount_tolerance(issue_difference, amount_tolerance):
             reason = "U8剔除后与物料月CAATS重算一致"
         else:
@@ -927,6 +991,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "posted_cost_rows": posted_cost_rows,
         "unposted_rows": unposted_rows,
         "no_cost_rows": no_cost_rows,
+        "period_field": "记账日期",
+        "posting_document_month_mismatch_rows": posting_document_month_mismatch_rows,
+        "warehouse_name_mismatch_rows": warehouse_name_mismatch_rows,
         "missing_master": sorted(missing_master),
         "review_rows": sum(row["status"] == "REVIEW" for row in material_rows),
         "pass_rows": sum(row["status"] == "PASS" for row in material_rows),
@@ -964,7 +1031,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "excluded_issue_quantity_bridge": sum(row["发出数量"] - row["u8_filtered_issue_quantity"] for row in material_rows),
         "excluded_issue_bridge": sum(row["发出金额"] - row["u8_filtered_issue_amount"] for row in material_rows),
     }
-    input_files = [ledger_path, warehouse_master_source, *summary_sources, project_root / "CAATS交付模板.xlsx"]
+    input_files = [ledger_path, warehouse_master_source, *summary_sources, input_dir / "CAATS交付模板.xlsx"]
     source_manifest = [
         {"role": "输入文件", "path": str(path), "name": path.name, "size": path.stat().st_size, "sha256": sha256(path)}
         for path in input_files

@@ -12,7 +12,7 @@ if (!outputDir || !qaDir) throw new Error("缺少U8_OUTPUT_DIR/U8_QA_DIR");
 const files = {
   caats: `${outputDir}/U8存货发出计价_CAATS审计结果表.xlsx`,
   ita: `${outputDir}/U8存货发出计价_ITA核对钩稽数据.xlsx`,
-  excluded: `${outputDir}/U8存货发出计价_四类移动剔除明细.xlsx`,
+  excluded: `${outputDir}/U8存货发出计价_调拨出入库剔除明细.xlsx`,
 };
 
 const expectedSheets = {
@@ -221,13 +221,17 @@ async function verifyWorkbook(kind, path) {
     if (Math.abs(bridgeIssueQuantity - sumColumn(issueExcludedValues, 12)) > 0.000001 || Math.abs(bridgeIssueAmount - sumColumn(issueExcludedValues, 14)) > 0.01) throw new Error("发出剔除明细合计未与物料月桥接钩稽");
     const differenceHeaders = incomeDifferenceSheet.getRange("A1:V1").values[0];
     if (differenceHeaders[17] !== "收入金额差异（U8剔除后-CAATS）" || differenceHeaders[18] !== "差异状态") throw new Error("收入金额差异明细字段结构不正确");
-    const differenceValues = incomeDifferenceSheet.getUsedRange(true).values.slice(1);
+    const rawDifferenceValues = incomeDifferenceSheet.getUsedRange(true).values.slice(1);
+    const differenceValues = rawDifferenceValues.filter((row) => /^20\d{4}$/.test(String(row[0] || "")));
+    const noDifferenceNotes = rawDifferenceValues.filter((row) => String(row[0] || "").startsWith("本期无收入金额差异记录"));
     const caatsWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(files.caats));
     const independentValues = caatsWorkbook.worksheets.getItem("01_物料月维度明细").getUsedRange(true).values.slice(1);
     const continuousValues = caatsWorkbook.worksheets.getItem("03_连续滚算明细").getUsedRange(true).values.slice(1);
     const independentByKey = new Map(independentValues.map((row) => [key(row[1], row[0]), row]));
     const continuousByKey = new Map(continuousValues.map((row) => [key(row[1], row[0]), row]));
     const expectedDifferenceRows = bridgeValues.filter((row) => Math.abs(Number(row[8] || 0) - Number(row[9] || 0)) >= 0.005);
+    if (expectedDifferenceRows.length === 0 && noDifferenceNotes.length !== 1) throw new Error("收入金额无差异时缺少明确说明");
+    if (expectedDifferenceRows.length > 0 && noDifferenceNotes.length > 0) throw new Error("收入金额存在差异时不应显示无差异说明");
     if (differenceValues.length !== expectedDifferenceRows.length) throw new Error("收入金额差异明细行数未与ITA物料月桥接钩稽");
     const expectedByKey = new Map(expectedDifferenceRows.map((row) => [key(row[0], row[1]), {
       quantity: Number(row[4] || 0) - Number(row[5] || 0),

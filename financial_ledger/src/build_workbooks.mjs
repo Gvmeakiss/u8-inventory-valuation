@@ -1,15 +1,15 @@
 import fs from "node:fs/promises";
 import { FileBlob, SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
-const projectRoot = process.env.U8_PROJECT_ROOT;
+const inputDir = process.env.U8_INPUT_DIR;
 const outputDir = process.env.U8_OUTPUT_DIR;
 const qaDir = process.env.U8_QA_DIR;
 const dataPath = process.env.U8_DATA_JSON;
 const buildPart = process.env.U8_BUILD_PART || "caats";
 const skipQa = process.env.U8_SKIP_QA === "1";
 
-if (!projectRoot || !outputDir || !qaDir || !dataPath) {
-  throw new Error("缺少U8_PROJECT_ROOT/U8_OUTPUT_DIR/U8_QA_DIR/U8_DATA_JSON环境变量");
+if (!inputDir || !outputDir || !qaDir || !dataPath) {
+  throw new Error("缺少U8_INPUT_DIR/U8_OUTPUT_DIR/U8_QA_DIR/U8_DATA_JSON环境变量");
 }
 
 await fs.mkdir(outputDir, { recursive: true });
@@ -59,7 +59,7 @@ function applyTableGrid(sheet, range) {
   sheet.getRange(range).format.borders = thinBorder;
 }
 
-const excludedHeaders = ["年月", "日期", "单据类型", "单据号", "仓库编码", "仓库名称", "仓库核算组", "存货编码", "存货名称", "规格型号", "收发类别", "记账人", "剔除数量", "剔除单价", "剔除金额", "来源文件", "来源行号"];
+const excludedHeaders = ["年月", "记账日期", "单据类型", "单据号", "仓库编码", "仓库名称", "仓库核算组", "存货编码", "存货名称", "规格型号", "业务类型", "记账人", "剔除数量", "剔除单价", "剔除金额", "来源文件", "来源行号"];
 const incomeDifferenceHeaders = [
   "年月", "存货编码", "存货名称", "规格型号", "计量单位",
   "用友U8月度收入数量", "剔除收入数量", "用友U8月度收入数量（剔除后）", "CAATS计入收入数量", "收入数量差异（U8剔除后-CAATS）",
@@ -126,6 +126,18 @@ function populateIncomeDifferenceSheet(sheet, rows) {
     sheet.getRange("A1:V1").format = headerFormat(palette.incomeHeader);
     sheet.getRange("A1:V1").format.rowHeight = 64;
     applyStatusFormatting(sheet, `S2:S${end}`);
+  } else {
+    sheet.getRange("A2:V3").merge();
+    sheet.getRange("A2").values = [["本期无收入金额差异记录：用友U8月度收入金额（剔除调拨后）与CAATS计入收入金额已按物料+月份全量钩稽一致。"]];
+    sheet.getRange("A2:V3").format = {
+      fill: "#E2F0D9",
+      font: { bold: true, color: "#006100" },
+      horizontalAlignment: "center",
+      verticalAlignment: "center",
+      wrapText: true,
+      borders: thinBorder,
+      rowHeight: 32,
+    };
   }
   for (const column of ["A", "B", "D", "E", "T", "U"]) sheet.getRange(`${column}1:${column}${Math.max(20, values.length + 1)}`).format.columnWidth = 15;
   sheet.getRange(`C1:C${Math.max(20, values.length + 1)}`).format.columnWidth = 30;
@@ -167,7 +179,7 @@ async function renderSheets(workbook, name, specs) {
 }
 
 async function buildCaatsWorkbook() {
-  const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(`${projectRoot}/CAATS交付模板.xlsx`));
+  const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(`${inputDir}/CAATS交付模板.xlsx`));
   const resultSheet = workbook.worksheets.getItem("Sheet2");
   const resultSheetName = "01_物料月维度明细";
   const continuousDetailName = "03_连续滚算明细";
@@ -347,7 +359,7 @@ async function buildCaatsWorkbook() {
   summarySheet.getRange("D3:G3").values = [["结论项目", "结果/口径", "状态", "审阅提示"]];
   summarySheet.getRange("D3:G3").format = headerFormat(palette.tableHeader);
   summarySheet.getRange("D4:G10").values = [
-    ["月度独立口径", "物料+月份；先从U8月表剔除四类移动，再与CAATS筛选取数及重算结果比较", "已执行", "表内依次展示U8原值、U8剔除后、CAATS及差异"],
+    ["月度独立口径", "物料+月份；先从U8月表剔除调拨出入库，再与CAATS筛选取数及重算结果比较", "已执行", "表内依次展示U8原值、U8剔除后、CAATS及差异"],
     ["连续滚算", `6月期末差异净额${data.continuous_monthly.at(-1).continuous_end_difference.toFixed(2)}元`, "敏感性分析", "未模拟自动调整单及最终取价调整"],
     ["跨仓抵销", `${data.offset_summary.both_sign_keys}个物料月份存在仓库正负贡献`, "已识别", "仓库贡献相对物料统一价，不代表仓库错账"],
     ["客户实际配置", "普通单据按仓；特殊单据按仓库组", "配置一致", "物料统一价仅为审计模拟"],
@@ -370,7 +382,7 @@ async function buildCaatsWorkbook() {
       `=SUMIF('${resultSheetName}'!$B$2:$B$${materialEnd},A${row},'${resultSheetName}'!$AJ$2:$AJ$${materialEnd})`,
       `=IF(B${row}=0,0,C${row}/B${row})`,
     ]];
-    summarySheet.getRange(`I${row}`).values = [["差异方向：U8月表剔除四类移动后-CAATS"]];
+    summarySheet.getRange(`I${row}`).values = [["差异方向：U8月表剔除调拨出入库后-CAATS"]];
   }
   summarySheet.getRange("B4:B9").format.numberFormat = numberFormat;
   summarySheet.getRange("E13:G18").format.numberFormat = numberFormat;
@@ -591,7 +603,7 @@ async function buildItaWorkbook() {
   summarySheet.getRange("D3:H3").format = headerFormat(palette.tableHeader);
   summarySheet.getRange("D4:H9").values = [
     ["月间衔接", "各月收发存", "上月期末=下月期初", data.transition_checks.every((row) => row.status === "PASS") ? "PASS" : "REVIEW", "数量和金额分别检查"],
-    ["CAATS本期收发", "已记账成本流水", "剔除调拨及借用四类移动", "已执行", `${data.metrics.excluded_income_detail_rows + data.metrics.excluded_issue_detail_rows}条已记账成本收发明细形成01及03剔除桥`],
+    ["CAATS本期收发", "财务核算流水账；月份取记账日期", "记账人非空、成本仓并剔除调拨入库/出库", "已执行", `${data.metrics.posting_document_month_mismatch_rows}条流水的单据月份与记账月份不同，均按记账月份归集`],
     ["本期收发钩稽", "剔除后口径vs原月表", "不要求一致", "不适用", "差额即剔除移动及原流水口径影响"],
     ["仓库维度", "流水+仓库档案", "仓库+物料+月份", "待补资料", "缺分仓期初数量和金额"],
     ["特殊单据", "其他出入库单", "仓库组+物料+月份", "待补资料", "需成本卷积结果"],
@@ -630,7 +642,7 @@ async function buildItaWorkbook() {
   bridgeSheet.showGridLines = false;
   bridgeSheet.freezePanes.freezeRows(1);
   bridgeSheet.freezePanes.freezeColumns(3);
-  const bridgeHeaders = ["年月", "存货编码", "存货名称", "U8月表收入数量", "四类移动入库数量", "CAATS计入收入数量", "U8月表收入金额", "四类移动入库金额", "CAATS计入收入金额", "U8月表发出数量", "四类移动出库数量", "CAATS计入发出数量", "U8月表发出金额", "四类移动出库金额", "CAATS筛选后流水发出金额(观察)", "流水已记账收入数量", "流水已记账发出数量", "剔除移动行数", "计算口径", "本期收发钩稽", "说明"];
+  const bridgeHeaders = ["年月", "存货编码", "存货名称", "U8月表收入数量", "调拨入库数量", "CAATS计入收入数量", "U8月表收入金额", "调拨入库金额", "CAATS计入收入金额", "U8月表发出数量", "调拨出库数量", "CAATS计入发出数量", "U8月表发出金额", "调拨出库金额", "CAATS筛选后流水发出金额(观察)", "流水已记账收入数量", "流水已记账发出数量", "剔除移动行数", "计算口径", "本期收发钩稽", "说明"];
   bridgeSheet.getRange("A1:U1").values = [bridgeHeaders];
   bridgeSheet.getRange("A1:U1").format = headerFormat(palette.tableHeader);
   bridgeSheet.getRange("A1:U1").format.rowHeight = 48;
@@ -638,7 +650,7 @@ async function buildItaWorkbook() {
     row.month, row.code, row.name, row["收入数量"], row.excluded_iq, row.filtered_ledger_iq,
     row["收入金额"], row.excluded_ia, row.filtered_ledger_ia, row["发出数量"], row.excluded_oq, row.filtered_ledger_oq,
     row["发出金额"], row.excluded_oa, row.filtered_ledger_oa, row.ledger_iq, row.ledger_oq, row.excluded_rows,
-    "记账人非空且排除四类移动", "展示差异", "U8月表原值与CAATS筛选值分别保留，不要求两者相等",
+    "记账人非空且排除调拨出入库", "展示差异", "U8月表原值与CAATS筛选值分别保留，不要求两者相等",
   ]);
   bridgeSheet.getRange(`A2:U${bridgeValues.length + 1}`).values = bridgeValues;
   bridgeSheet.getRange(`D2:S${bridgeValues.length + 1}`).format.numberFormat = numberFormat;
@@ -655,7 +667,7 @@ async function buildItaWorkbook() {
   warehouseSheet.getRange("A1:AX1").merge();
   warehouseSheet.getRange("A1").values = [["仓库+物料+月份核对表（ITA全量）"]];
   warehouseSheet.getRange("A1:AX1").format = titleFormat;
-  const warehouseHeaders = ["年月", "仓库编码", "仓库名称", "仓库核算组", "计价方式", "记入成本", "停用日期", "存货编码", "存货名称", "规格", "单位", "已记账成本行数", "未记账行数", "已记账非成本行数", "已记账入库数量", "已记账入库金额", "正常单据入库数量", "正常单据入库金额", "特殊单据入库数量", "特殊单据入库金额", "已记账出库数量", "已记账出库金额", "观察出库单价", "正常单据出库数量", "正常单据出库金额", "特殊单据出库数量", "特殊单据出库金额", "调拨入库数量", "调拨入库金额", "调拨出库数量", "调拨出库金额", "涉及收发类别", "涉及单据类型", "U8物料月收入数量", "分仓汇总收入数量", "收入数量桥接", "U8物料月发出数量", "分仓汇总发出数量", "发出数量桥接", "分仓期初数量(输入)", "分仓期初金额(输入)", "分仓重算平均价", "正常单据重算出库金额", "特殊单据已记账金额(占位)", "重算发出金额", "发出金额差异", "分仓期末数量", "分仓期末金额", "状态", "说明"];
+  const warehouseHeaders = ["年月", "仓库编码", "仓库名称", "仓库核算组", "计价方式", "记入成本", "停用日期", "存货编码", "存货名称", "规格", "单位", "已记账成本行数", "未记账行数", "已记账非成本行数", "已记账入库数量", "已记账入库金额", "正常单据入库数量", "正常单据入库金额", "特殊单据入库数量", "特殊单据入库金额", "已记账出库数量", "已记账出库金额", "观察出库单价", "正常单据出库数量", "正常单据出库金额", "特殊单据出库数量", "特殊单据出库金额", "调拨入库数量", "调拨入库金额", "调拨出库数量", "调拨出库金额", "涉及业务类型", "涉及单据类型", "U8物料月收入数量", "分仓汇总收入数量", "收入数量桥接", "U8物料月发出数量", "分仓汇总发出数量", "发出数量桥接", "分仓期初数量(输入)", "分仓期初金额(输入)", "分仓重算平均价", "正常单据重算出库金额", "特殊单据已记账金额(占位)", "重算发出金额", "发出金额差异", "分仓期末数量", "分仓期末金额", "状态", "说明"];
   warehouseSheet.getRange("A3:AX3").values = [warehouseHeaders];
   warehouseSheet.getRange("A3:AX3").format = headerFormat(palette.tableHeader);
   warehouseSheet.getRange("A3:AX3").format.rowHeight = 60;
@@ -702,7 +714,7 @@ async function buildItaWorkbook() {
   materialBridgeSheet.getRange("A1:Y1").format = headerFormat(palette.tableHeader);
   materialBridgeSheet.getRange("A1:Y1").format.rowHeight = 64;
   materialBridgeSheet.getRange("A1:Y1").format.wrapText = true;
-  const materialBridgeValues = material.map((row) => [row.month, row.code, row.name, row["收入数量"], row.u8_filtered_income_quantity, row.filtered_ledger_iq, row.u8_filtered_income_quantity - row.filtered_ledger_iq, row["收入金额"], row.u8_filtered_income_amount, row.filtered_ledger_ia, row.u8_filtered_income_amount - row.filtered_ledger_ia, row["发出数量"], row.u8_filtered_issue_quantity, row.filtered_ledger_oq, row.u8_filtered_issue_quantity - row.filtered_ledger_oq, row["发出金额"], row.u8_filtered_issue_amount, row.filtered_ledger_oa, row.u8_filtered_issue_amount - row.filtered_ledger_oa, row.caats_issue, row.filtered_ledger_oa - row.caats_issue, row.issue_diff, row.warehouse_count, row.issue_warehouse_count, "记账人非空且排除四类移动"]);
+  const materialBridgeValues = material.map((row) => [row.month, row.code, row.name, row["收入数量"], row.u8_filtered_income_quantity, row.filtered_ledger_iq, row.u8_filtered_income_quantity - row.filtered_ledger_iq, row["收入金额"], row.u8_filtered_income_amount, row.filtered_ledger_ia, row.u8_filtered_income_amount - row.filtered_ledger_ia, row["发出数量"], row.u8_filtered_issue_quantity, row.filtered_ledger_oq, row.u8_filtered_issue_quantity - row.filtered_ledger_oq, row["发出金额"], row.u8_filtered_issue_amount, row.filtered_ledger_oa, row.u8_filtered_issue_amount - row.filtered_ledger_oa, row.caats_issue, row.filtered_ledger_oa - row.caats_issue, row.issue_diff, row.warehouse_count, row.issue_warehouse_count, "记账人非空且排除调拨出入库"]);
   materialBridgeSheet.getRange(`A2:Y${materialBridgeValues.length + 1}`).values = materialBridgeValues;
   materialBridgeSheet.getRange(`D2:X${materialBridgeValues.length + 1}`).format.numberFormat = numberFormat;
   materialBridgeSheet.getRange(`B2:B${materialBridgeValues.length + 1}`).format.numberFormat = "0000";
@@ -713,7 +725,7 @@ async function buildItaWorkbook() {
 
   groupSheet.showGridLines = false;
   groupSheet.freezePanes.freezeRows(1);
-  const groupHeaders = ["年月", "仓库核算组", "存货编码", "存货名称", "规格", "单位", "特殊单据行数", "入库数量", "入库金额", "入库观察单价", "出库数量", "出库金额", "出库观察单价", "涉及收发类别", "配置说明"];
+  const groupHeaders = ["年月", "仓库核算组", "存货编码", "存货名称", "规格", "单位", "特殊单据行数", "入库数量", "入库金额", "入库观察单价", "出库数量", "出库金额", "出库观察单价", "涉及业务类型", "配置说明"];
   groupSheet.getRange("A1:O1").values = [groupHeaders];
   groupSheet.getRange("A1:O1").format = headerFormat(palette.tableHeader);
   const groupValues = groups.map((row) => [row.month, row.group, row.code, row.name, row.spec, row.unit, row.rows, row.iq, row.ia, row.in_unit, row.oq, row.oa, row.out_unit, row.categories, "特殊单据按仓库核算组统一计价；当前为已记账观察结果"]);
@@ -750,9 +762,10 @@ async function buildItaWorkbook() {
   scopeSheet.getRange("A3:D3").values = [["项目", "处理", "依据", "限制/后续"]];
   scopeSheet.getRange("A3:D3").format = headerFormat(palette.sectionHeader);
   const itaScopeRows = [
+    ["期间判定", "只使用财务核算流水账的记账日期；单据日期不参与分月", "客户指定取数逻辑", `${data.metrics.posting_document_month_mismatch_rows}条记录存在单据月份与记账月份不同，已按记账日期归集`],
     ["纳入成本流水", "记账人非空且仓库记入成本=是", "流水记账状态+仓库档案", "未记账记录单独披露"],
-    ["四类移动", "调拨出库、调拨入库、借出借用出库、借用归还入库全部排除", "客户指定剔除口径", `${data.metrics.excluded_movement_rows}条原始分类记录；其中${data.metrics.excluded_income_detail_rows + data.metrics.excluded_issue_detail_rows}条已记账成本收发明细形成01及03显式剔除桥`],
-    ["CAATS筛选方法", "流水同时满足记账人非空、仓库记入成本且移动方式不属于四类排除项；U8月表先建立四类移动剔除后口径", "04_流水桥接、06_物料月桥接", "CAATS结果统一与U8剔除后口径比较"],
+    ["调拨出入库", "调拨出库、调拨入库全部排除", "客户指定剔除口径", `${data.metrics.excluded_movement_rows}条原始分类记录；其中${data.metrics.excluded_income_detail_rows + data.metrics.excluded_issue_detail_rows}条已记账成本收发明细形成01及03显式剔除桥`],
+    ["CAATS筛选方法", "流水同时满足记账人非空、仓库记入成本且业务类型不属于调拨入库、调拨出库；U8月表先建立调拨出入库剔除后口径", "04_流水桥接、06_物料月桥接", "CAATS结果统一与U8剔除后口径比较"],
     ["月间衔接", "上月期末与下月期初逐物料比较", "客户月度收发存", "当前数量、金额均已衔接"],
     ["月度独立重算", "物料+月份；每月使用U8期初，CAATS本期收发取双重筛选后的流水", "01_物料月维度明细", "不累计上月CAATS差异"],
     ["连续滚算", "首次出现使用U8期初；从首次出现月至Final建立完整月份面板；后续承接上月连续CAATS期末", "03_连续滚算明细", "BB为期初承接差异，BC为四段式滚转钩稽差异，BD为状态"],
@@ -760,19 +773,19 @@ async function buildItaWorkbook() {
     ["连续滚算钩稽", "期初承接差异+本期收入差异-本期发出差异-本期期末差异=0", "03_连续滚算明细、04_连续滚算汇总", `全量异常${data.metrics.rollforward_review_rows}项；不设置倒挤数`],
     ["Final结存汇总", "同一物料仅取最终期间结存差异，不跨月累计", "04_连续滚算汇总", `${data.metrics.final_material_rows}个Final物料；未模拟自动调整单及最终取价调整`],
     ["差异方向与容差", "U8月表剔除后金额-CAATS金额；正数表示U8剔除后金额较高", `金额容差${amountTolerance}元`, "浮点尾差按10位小数规范化后判断"],
-    ["差异拆分", "总差异=U8剔除后与CAATS计入范围差异+重计价差异", "06_物料月桥接", "先统一四类移动口径，再解释剩余流水桥接及计价影响"],
+    ["差异拆分", "总差异=U8剔除后与CAATS计入范围差异+重计价差异", "06_物料月桥接", "先统一调拨出入库口径，再解释剩余流水桥接及计价影响"],
     ["正常单据", "按仓库汇总", "仓库档案全月平均法", "缺分仓期初，暂不能独立复算"],
     ["特殊单据", "按仓库核算组汇总", "成本卷积配置", "需成本卷积结果"],
     ["跨仓抵销", "仅展示数量金额干净桥接组合", "仓库贡献相对物料统一价", "不是仓库错账或调整建议"],
     ["本期收发钩稽", "逐项展示U8原值、U8剔除后、CAATS计入值及差异", "客户指定口径", "CAATS结果仅与U8剔除后口径比较"],
-    ["剔除明细", "已记账、记入成本且属于四类移动的流水按收入/发出分别释放", "四类移动剔除明细工作簿", "按物料+月份汇总后分别等于01及03的剔除数量、金额"],
-    ["CAATS/ITA边界", "CAATS保留结果表，ITA保留核对证据，四类移动流水另册", "职责分离", "05对应01，06对应03；剔除流水见配套明细工作簿"],
+    ["剔除明细", "已记账、记入成本且属于调拨出入库的流水按收入/发出分别释放", "调拨出入库剔除明细工作簿", "按物料+月份汇总后分别等于01及03的剔除数量、金额"],
+    ["CAATS/ITA边界", "CAATS保留结果表，ITA保留核对证据，调拨出入库流水另册", "职责分离", "05对应01，06对应03；剔除流水见配套明细工作簿"],
   ];
   scopeSheet.getRange(`A4:D${itaScopeRows.length + 3}`).values = itaScopeRows;
   scopeSheet.getRange(`A3:D${itaScopeRows.length + 3}`).format.borders = thinBorder;
   scopeSheet.getRange("A1:A20").format.columnWidth = 25;
   scopeSheet.getRange("B1:D20").format.columnWidth = 52;
-  scopeSheet.getRange("A4:D20").format.wrapText = true;
+  scopeSheet.getRange(`A4:D${itaScopeRows.length + 3}`).format.wrapText = true;
 
   checkSheet.showGridLines = false;
   checkSheet.getRange("A1:G1").merge();
@@ -786,8 +799,9 @@ async function buildItaWorkbook() {
     ["物料月份行数", material.length, data.metrics.material_month_rows, null, 0, null, "收发存去除合计行"],
     ["仓库物料月份行数", warehouses.length, data.metrics.warehouse_material_month_rows, null, 0, null, "流水发生额组合"],
     ["流水仓库映射缺失数", data.metrics.missing_master.length, 0, null, 0, null, "应全部映射仓库档案"],
-    ["剔除移动方式配置数", data.metrics.excluded_movement_categories.length, 4, null, 0, null, "应为调拨出入库及借用出入库四类"],
-    ["剔除移动流水行数钩稽", excludedBreakdownRows, data.metrics.excluded_movement_rows, null, 0, null, "四类分项行数合计应等于剔除总行数"],
+    ["仓库编码名称不一致数", data.metrics.warehouse_name_mismatch_rows, 0, null, 0, null, "流水仓库编码为主键，并复核仓库名称"],
+    ["剔除移动方式配置数", data.metrics.excluded_movement_categories.length, 2, null, 0, null, "应为调拨入库、调拨出库两类"],
+    ["剔除移动流水行数钩稽", excludedBreakdownRows, data.metrics.excluded_movement_rows, null, 0, null, "两类分项行数合计应等于剔除总行数"],
     ["月间期初期末不一致数", transitionMismatch, 0, null, 0, null, "数量+金额不一致项"],
     ["仓库档案非全月平均数", master.filter((row) => row["计价方式"] !== "全月平均法").length, 0, null, 0, null, "客户档案"],
     ["跨仓抵销明细行数", data.offset_rows.length, data.offset_summary.offset_rows, null, 0, null, "仅干净桥接组合"],
@@ -848,7 +862,7 @@ async function buildExcludedWorkbook() {
     await renderSheets(workbook, "excluded", [["01_收入剔除明细", "A1:Q24", 0.8], ["02_发出剔除明细", "A1:Q24", 0.8], ["03_收入金额差异明细", "A1:V24", 0.7]]);
   }
   const output = await SpreadsheetFile.exportXlsx(workbook);
-  const path = `${outputDir}/U8存货发出计价_四类移动剔除明细.xlsx`;
+  const path = `${outputDir}/U8存货发出计价_调拨出入库剔除明细.xlsx`;
   await output.save(path);
   return path;
 }
