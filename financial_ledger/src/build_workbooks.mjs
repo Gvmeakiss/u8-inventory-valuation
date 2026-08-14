@@ -126,6 +126,18 @@ function populateIncomeDifferenceSheet(sheet, rows) {
     sheet.getRange("A1:V1").format = headerFormat(palette.incomeHeader);
     sheet.getRange("A1:V1").format.rowHeight = 64;
     applyStatusFormatting(sheet, `S2:S${end}`);
+  } else {
+    sheet.getRange("A2:V3").merge();
+    sheet.getRange("A2").values = [["本期无收入金额差异记录：用友U8月度收入金额（剔除调拨后）与CAATS计入收入金额已按物料+月份全量钩稽一致。"]];
+    sheet.getRange("A2:V3").format = {
+      fill: "#E2F0D9",
+      font: { bold: true, color: "#006100" },
+      horizontalAlignment: "center",
+      verticalAlignment: "center",
+      wrapText: true,
+      borders: thinBorder,
+      rowHeight: 32,
+    };
   }
   for (const column of ["A", "B", "D", "E", "T", "U"]) sheet.getRange(`${column}1:${column}${Math.max(20, values.length + 1)}`).format.columnWidth = 15;
   sheet.getRange(`C1:C${Math.max(20, values.length + 1)}`).format.columnWidth = 30;

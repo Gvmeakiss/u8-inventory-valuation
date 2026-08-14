@@ -601,7 +601,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     excluded_movement_categories = set(config.get("excluded_movement_categories", []))
 
     input_dir = project_root / "input" / "current"
-    ledger_path = (args.ledger or input_dir / "财务核算-流水账-2026.01-0.6.xlsx").resolve()
+    ledger_path = (args.ledger or input_dir / "财务核算-流水账 记账日期-2026.01-.06.xlsx").resolve()
     summary_dir = (args.summary_dir or input_dir / "收发存汇总").resolve()
     warehouse_master_source = args.warehouse_master.resolve()
     warehouse_master_path = convert_xls(warehouse_master_source, converted_dir / "warehouse_master", args.soffice)

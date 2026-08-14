@@ -2,7 +2,9 @@
 
 本目录是从既有仓库管理流水账程序隔离复制出的独立版本，只处理：
 
-`input/current/财务核算-流水账-2026.01-0.6.xlsx`
+`input/current/财务核算-流水账 记账日期-2026.01-.06.xlsx`
+
+该文件为客户于2026-08-14重新提供的完整记账日期版本，替代本代码分支此前使用的`财务核算-流水账-2026.01-0.6.xlsx`。旧输入及旧输出继续保留，仅用于版本比较。
 
 原项目根目录下的`src/`、`config/`、`tests/`及原`run_pipeline.sh`不作为本版本运行入口，也不会被本版本覆盖。
 
@@ -43,7 +45,7 @@ cd /Users/aatrox/Desktop/U8存货发出计价/code/financial_ledger
 
 默认运行编号：
 
-`u8_caats_202601_202606_financial_ledger_v1`
+`u8_caats_202601_202606_financial_ledger_postingdate_v2`
 
 也可传入运行编号、仓库档案和流水账：
 

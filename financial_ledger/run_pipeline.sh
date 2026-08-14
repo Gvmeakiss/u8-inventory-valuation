@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h:h}
 INPUT_DIR=${PROJECT_ROOT}/input/current
-RUN_ID=${1:-u8_caats_202601_202606_financial_ledger_v1}
+RUN_ID=${1:-u8_caats_202601_202606_financial_ledger_postingdate_v2}
 WAREHOUSE_MASTER=${2:-${INPUT_DIR}/仓库档案.XLS}
-LEDGER=${3:-${INPUT_DIR}/财务核算-流水账-2026.01-0.6.xlsx}
+LEDGER=${3:-${INPUT_DIR}/财务核算-流水账 记账日期-2026.01-.06.xlsx}
 OUTPUT_DIR=${PROJECT_ROOT}/output/runs/${RUN_ID}
 STAGING_DIR=${PROJECT_ROOT}/output/work/${RUN_ID}
 
