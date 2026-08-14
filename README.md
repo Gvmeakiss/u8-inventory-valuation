@@ -1,4 +1,28 @@
-# U8存货发出计价项目代码
+# U8 存货发出计价工具
+
+> 将 U8 导出、仓库档案与 CAATS 模板处理为「CAATS 审计结果表」与「ITA 核对钩稽数据」两份职责分离的工作簿。
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white" alt="Node">
+  <img src="https://img.shields.io/badge/Output-Excel%20(xlsx)-217346" alt="Excel">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+  <img src="https://img.shields.io/github/last-commit/Gvmeakiss/u8-inventory-valuation?label=updated" alt="Updated">
+</p>
+
+## 📋 目录
+
+- [一、项目结构](#一项目结构)
+- [二、运行方式](#二运行方式)
+- [三、数据口径](#三数据口径)
+  - [已记账成本流水](#已记账成本流水)
+  - [普通与特殊单据](#普通与特殊单据)
+  - [月度独立重算](#月度独立重算)
+  - [连续滚算](#连续滚算)
+  - [跨仓抵销](#跨仓抵销)
+- [四、CAATS与ITA工作簿边界](#四caats与ita工作簿边界)
+- [五、关键控制](#五关键控制)
+- [六、新数据导入](#六新数据导入)
 
 本目录将原始U8导出、仓库档案和CAATS模板处理为两份职责分离的正式工作簿：
 
@@ -161,3 +185,13 @@ CAATS结果表只保留财务审计需要的六张结果Sheet；计算口径、�
 5. 使用新的`run_id`运行，不能覆盖已交付版本。
 
 程序在中间目录记录原始文件SHA-256、字段、行数和期间；中间数据可重建，不属于正式交付。
+
+---
+
+<div align="center">
+
+**James Li · 审计数据分析工具集**
+
+📫 本工具用于内部审计与数据核对，辅助分析但不替代专业判断，不作为对外签字版本。
+
+</div>
