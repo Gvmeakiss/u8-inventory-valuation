@@ -46,7 +46,7 @@ output/work/<run_id>/   # 转换文件、标准化数据、检查记录和视觉
 当前复核通过的最新运行：
 
 ```text
-output/runs/u8_caats_202601_202606_financial_ledger_postingdate_summary_balances_v5/
+output/runs/u8_caats_202601_202606_financial_ledger_postingdate_summary_balances_v7/
 ```
 
 ## 当前代码结构
