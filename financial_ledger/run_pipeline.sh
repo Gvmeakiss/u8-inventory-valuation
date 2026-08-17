@@ -7,6 +7,8 @@ INPUT_DIR=${PROJECT_ROOT}/input/current
 RUN_ID=${1:-u8_caats_202601_202606_financial_ledger_postingdate_v2}
 WAREHOUSE_MASTER=${2:-${INPUT_DIR}/仓库档案.XLS}
 LEDGER=${3:-${INPUT_DIR}/财务核算-流水账 记账日期-2026.01-.06.xlsx}
+MATERIAL_MAPPING=${4:-${PROJECT_ROOT}/input/物料类别与名称-20260817.xlsx}
+ACCOUNT_MAPPING=${5:-${PROJECT_ROOT}/input/存货科目.XLS}
 OUTPUT_DIR=${PROJECT_ROOT}/output/runs/${RUN_ID}
 STAGING_DIR=${PROJECT_ROOT}/output/work/${RUN_ID}
 
@@ -22,6 +24,8 @@ ln -sfn "${U8_NODE_MODULES}" "${SCRIPT_DIR}/node_modules"
   --project-root "${PROJECT_ROOT}" \
   --ledger "${LEDGER}" \
   --warehouse-master "${WAREHOUSE_MASTER}" \
+  --material-mapping "${MATERIAL_MAPPING}" \
+  --account-mapping "${ACCOUNT_MAPPING}" \
   --config "${SCRIPT_DIR}/config/project.json" \
   --soffice "${U8_SOFFICE_BIN}" \
   --staging-dir "${STAGING_DIR}" \

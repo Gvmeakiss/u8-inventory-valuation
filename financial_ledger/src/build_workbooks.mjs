@@ -197,6 +197,9 @@ async function buildCaatsWorkbook() {
   resultSheet.freezePanes.freezeRows(1);
   resultSheet.freezePanes.freezeColumns(4);
   const identityHeaders = resultSheet.getRange("A1:I1").values[0].map((value) => typeof value === "string" ? value.replaceAll("CAATs", "CAATS") : value);
+  const mappingHeaders = [
+    "物料类别编码", "物料类别名称", "存货科目编码", "存货科目名称",
+  ];
   const resultHeaders = [
     ...identityHeaders,
     "客户U8期初数量", "客户U8期初单价", "客户U8期初金额",
@@ -206,8 +209,9 @@ async function buildCaatsWorkbook() {
     "用友U8月度发出单价", "用友U8月度发出金额", "剔除发出金额", "用友U8月度发出单价（剔除后）", "用友U8月度发出金额（剔除后）", "CAATS发出金额", "发出金额差异（U8剔除后-CAATS）",
     "用友U8月度结存数量", "用友U8月度结存单价", "用友U8月度结存金额", "用友U8月度结存数量（剔除后）", "用友U8月度结存单价（剔除后）", "用友U8月度结存金额（剔除后）", "CAATS结存金额", "结存金额差异（U8剔除后-CAATS）",
     "CAATS月末平均价", "CAATS结存数量", "结存数量差异（U8剔除后-CAATS）", "结果状态", "主要差异原因",
+    ...mappingHeaders,
   ];
-  resultSheet.getRange("A1:AW1").values = [resultHeaders];
+  resultSheet.getRange("A1:BA1").values = [resultHeaders];
   const resultValues = material.map((row) => [
     row.code, row.month, row.stock_code || null, row.name, row.spec, row.unit, row.weight || null, row.reg || null, row.manufacturer || null,
     row["期初数量"], row["期初单价"], row["期初金额"],
@@ -215,8 +219,9 @@ async function buildCaatsWorkbook() {
     row["发出数量"], row.excluded_posted_oq, null, row.filtered_ledger_oq, null, row["发出单价"], row["发出金额"], row.excluded_posted_oa, row.u8_filtered_issue_price, null, null, null,
     row["结存数量"], row["结存单价"], row["结存金额"], row.u8_filtered_end_quantity, row.u8_filtered_end_price, row.u8_filtered_end_amount, null, null,
     null, null, null, null, row.reason,
+    row.material_category_code || null, row.material_category_name || null, row.account_codes || null, row.account_names || null,
   ]);
-  resultSheet.getRange(`A2:AW${materialEnd}`).values = resultValues;
+  resultSheet.getRange(`A2:BA${materialEnd}`).values = resultValues;
   const formulas = { O: [], Q: [], V: [], X: [], AA: [], AC: [], AH: [], AI: [], AJ: [], AQ: [], AR: [], AS: [], AT: [], AU: [], AV: [] };
   for (let row = 2; row <= materialEnd; row += 1) {
     formulas.O.push([`=M${row}-N${row}`]);
@@ -244,8 +249,9 @@ async function buildCaatsWorkbook() {
   resultSheet.getRange("Y1:AJ1").format = headerFormat(palette.issueHeader);
   resultSheet.getRange("AK1:AR1").format = headerFormat(palette.closingHeader);
   resultSheet.getRange("AS1:AW1").format = headerFormat(palette.resultHeader);
-  resultSheet.getRange("A1:AW1").format.rowHeight = 64;
-  resultSheet.getRange("A1:AW1").format.wrapText = true;
+  resultSheet.getRange("AX1:BA1").format = headerFormat(palette.tableHeader);
+  resultSheet.getRange("A1:BA1").format.rowHeight = 64;
+  resultSheet.getRange("A1:BA1").format.wrapText = true;
   resultSheet.getRange(`J2:AW${materialEnd}`).format.numberFormat = numberFormat;
   resultSheet.getRange(`A2:A${materialEnd}`).format.numberFormat = "0000";
   resultSheet.getRange(`B2:B${materialEnd}`).format.numberFormat = "0";
@@ -255,13 +261,17 @@ async function buildCaatsWorkbook() {
   for (const column of ["J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI", "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ", "AR", "AS", "AT", "AU", "AV"]) resultSheet.getRange(`${column}1:${column}${materialEnd}`).format.columnWidth = 15;
   resultSheet.getRange(`AW1:AW${materialEnd}`).format.columnWidth = 36;
   resultSheet.getRange(`AW2:AW${materialEnd}`).format.wrapText = true;
+  for (const column of ["AX", "AZ"]) resultSheet.getRange(`${column}1:${column}${materialEnd}`).format.columnWidth = 18;
+  for (const column of ["AY", "BA"]) resultSheet.getRange(`${column}1:${column}${materialEnd}`).format.columnWidth = 28;
+  resultSheet.getRange(`AX2:BA${materialEnd}`).format.wrapText = true;
+  for (const column of ["AX", "AZ"]) resultSheet.getRange(`${column}2:${column}${materialEnd}`).format.numberFormat = "@";
   applyStatusFormatting(resultSheet, `AV2:AV${materialEnd}`);
 
   continuousDetailSheet.showGridLines = true;
   continuousDetailSheet.freezePanes.freezeRows(1);
   continuousDetailSheet.freezePanes.freezeColumns(4);
-  const continuousHeaders = [...resultHeaders, "记录类型", "U8期初数量(核对)", "U8期初金额(核对)", "连续起算方式", "期初承接结存差异（U8-连续CAATS）", "金额滚转钩稽差异", "金额滚转钩稽状态"];
-  continuousDetailSheet.getRange("A1:BD1").values = [continuousHeaders];
+  const continuousHeaders = [...resultHeaders.slice(0, 49), "记录类型", "U8期初数量(核对)", "U8期初金额(核对)", "连续起算方式", "期初承接结存差异（U8-连续CAATS）", "金额滚转钩稽差异", "金额滚转钩稽状态", ...mappingHeaders];
+  continuousDetailSheet.getRange("A1:BH1").values = [continuousHeaders];
   continuousDetailSheet.getRange("J1:L1").values = [["连续期初数量", "连续期初单价", "连续期初金额"]];
   continuousDetailSheet.getRange("AQ1:AW1").values = [["连续CAATS结存金额", "结存金额差异（U8剔除后-连续CAATS）", "连续CAATS月末平均价", "连续CAATS结存数量", "结存数量差异（U8剔除后-连续CAATS）", "连续结果状态", "连续滚算说明"]];
   continuousMaterial.sort((left, right) => {
@@ -276,8 +286,9 @@ async function buildCaatsWorkbook() {
     row["结存数量"], row["结存单价"], row["结存金额"], row.u8_filtered_end_quantity, row.u8_filtered_end_price, row.u8_filtered_end_amount, null, null,
     null, null, null, null, null,
     row.record_type, row["期初数量"], row["期初金额"], null, null, null, null,
+    row.material_category_code || null, row.material_category_name || null, row.account_codes || null, row.account_names || null,
   ]);
-  continuousDetailSheet.getRange(`A2:BD${continuousEnd}`).values = continuousDetailValues;
+  continuousDetailSheet.getRange(`A2:BH${continuousEnd}`).values = continuousDetailValues;
   const continuousDetailFormulas = { J: [], K: [], L: [], O: [], Q: [], V: [], X: [], AA: [], AC: [], AH: [], AI: [], AJ: [], AQ: [], AR: [], AS: [], AT: [], AU: [], AV: [], AW: [], BA: [], BB: [], BC: [], BD: [] };
   for (let row = 2; row <= continuousEnd; row += 1) {
     const canRoll = row === 2 ? null : `A${row}=A${row - 1}`;
@@ -316,8 +327,9 @@ async function buildCaatsWorkbook() {
   continuousDetailSheet.getRange("AS1:AW1").format = headerFormat(palette.resultHeader);
   continuousDetailSheet.getRange("AX1:BB1").format = headerFormat(palette.sectionHeader);
   continuousDetailSheet.getRange("BC1:BD1").format = headerFormat(palette.resultHeader);
-  continuousDetailSheet.getRange("A1:BD1").format.rowHeight = 64;
-  continuousDetailSheet.getRange("A1:BD1").format.wrapText = true;
+  continuousDetailSheet.getRange("BE1:BH1").format = headerFormat(palette.tableHeader);
+  continuousDetailSheet.getRange("A1:BH1").format.rowHeight = 64;
+  continuousDetailSheet.getRange("A1:BH1").format.wrapText = true;
   continuousDetailSheet.getRange(`J2:AW${continuousEnd}`).format.numberFormat = numberFormat;
   continuousDetailSheet.getRange(`AY2:AZ${continuousEnd}`).format.numberFormat = numberFormat;
   continuousDetailSheet.getRange(`BB2:BC${continuousEnd}`).format.numberFormat = numberFormat;
@@ -332,13 +344,17 @@ async function buildCaatsWorkbook() {
   continuousDetailSheet.getRange(`BA1:BA${continuousEnd}`).format.columnWidth = 24;
   continuousDetailSheet.getRange(`BD1:BD${continuousEnd}`).format.columnWidth = 16;
   continuousDetailSheet.getRange(`AW2:BA${continuousEnd}`).format.wrapText = true;
+  for (const column of ["BE", "BG"]) continuousDetailSheet.getRange(`${column}1:${column}${continuousEnd}`).format.columnWidth = 18;
+  for (const column of ["BF", "BH"]) continuousDetailSheet.getRange(`${column}1:${column}${continuousEnd}`).format.columnWidth = 28;
+  continuousDetailSheet.getRange(`BE2:BH${continuousEnd}`).format.wrapText = true;
+  for (const column of ["BE", "BG"]) continuousDetailSheet.getRange(`${column}2:${column}${continuousEnd}`).format.numberFormat = "@";
   applyStatusFormatting(continuousDetailSheet, `AV2:AV${continuousEnd}`);
   applyStatusFormatting(continuousDetailSheet, `BD2:BD${continuousEnd}`);
 
   summarySheet.showGridLines = false;
-  summarySheet.getRange("A1:J1").merge();
+  summarySheet.getRange("A1:M1").merge();
   summarySheet.getRange("A1").values = [["U8存货发出计价——物料月维度结果汇总（CAATS双重筛选）"]];
-  summarySheet.getRange("A1:J1").format = titleFormat;
+  summarySheet.getRange("A1:M1").format = titleFormat;
   summarySheet.getRange("A3:B9").values = [
     ["指标", "结果"],
     ["物料月份行数", null],
@@ -367,8 +383,11 @@ async function buildCaatsWorkbook() {
     ["支持证据", "另见ITA核对钩稽数据工作簿", "职责分离", "CAATS表不保存流水及配置底表"],
     ["差异拆分", `U8剔除后与CAATS计入范围差异${data.metrics.scope_issue_difference.toFixed(2)}元；重计价差异${data.metrics.repricing_issue_difference.toFixed(2)}元`, "已拆分", `两项合计为U8剔除后-CAATS总差异${data.metrics.signed_issue_diff.toFixed(2)}元`],
   ];
-  summarySheet.getRange("A12:I12").values = [["年月", "物料月份数", "REVIEW数", "PASS数", "用友U8月度发出金额（剔除后）", "CAATS发出金额", "发出差异净额", "REVIEW占比", "说明"]];
-  summarySheet.getRange("A12:I12").format = headerFormat(palette.tableHeader);
+  summarySheet.getRange("A12:M12").values = [[
+    "年月", "物料月份数", "REVIEW数", "PASS数", "用友U8月度发出金额（剔除后）", "CAATS发出金额", "发出差异净额", "REVIEW占比", "说明",
+    "客户U8期初数量（合计）", "客户U8期初金额（合计）", "CAATS结存数量（合计）", "CAATS结存金额（合计）",
+  ]];
+  summarySheet.getRange("A12:M12").format = headerFormat(palette.tableHeader);
   for (let index = 0; index < data.monthly.length; index += 1) {
     const row = 13 + index;
     const month = data.monthly[index].month;
@@ -383,37 +402,47 @@ async function buildCaatsWorkbook() {
       `=IF(B${row}=0,0,C${row}/B${row})`,
     ]];
     summarySheet.getRange(`I${row}`).values = [["差异方向：U8月表剔除调拨出入库后-CAATS"]];
+    summarySheet.getRange(`J${row}:M${row}`).formulas = [[
+      `=SUMIF('${resultSheetName}'!$B$2:$B$${materialEnd},A${row},'${resultSheetName}'!$J$2:$J$${materialEnd})`,
+      `=SUMIF('${resultSheetName}'!$B$2:$B$${materialEnd},A${row},'${resultSheetName}'!$L$2:$L$${materialEnd})`,
+      `=SUMIF('${resultSheetName}'!$B$2:$B$${materialEnd},A${row},'${resultSheetName}'!$AT$2:$AT$${materialEnd})`,
+      `=SUMIF('${resultSheetName}'!$B$2:$B$${materialEnd},A${row},'${resultSheetName}'!$AQ$2:$AQ$${materialEnd})`,
+    ]];
   }
   summarySheet.getRange("B4:B9").format.numberFormat = numberFormat;
   summarySheet.getRange("E13:G18").format.numberFormat = numberFormat;
+  summarySheet.getRange("J13:M18").format.numberFormat = numberFormat;
   summarySheet.getRange("H13:H18").format.numberFormat = "0.0%";
   summarySheet.getRange("A3:B9").format.borders = thinBorder;
   summarySheet.getRange("D3:G10").format.borders = thinBorder;
-  summarySheet.getRange("A12:I18").format.borders = thinBorder;
+  summarySheet.getRange("A12:M18").format.borders = thinBorder;
   summarySheet.getRange("A1:A22").format.columnWidth = 22;
   summarySheet.getRange("B1:C22").format.columnWidth = 16;
   summarySheet.getRange("D1:D22").format.columnWidth = 28;
   summarySheet.getRange("E1:F22").format.columnWidth = 25;
   summarySheet.getRange("G1:G22").format.columnWidth = 44;
   summarySheet.getRange("H1:I22").format.columnWidth = 18;
+  summarySheet.getRange("J1:M22").format.columnWidth = 20;
   summarySheet.getRange("D4:G10").format.wrapText = true;
-
   differenceSheet.showGridLines = false;
   differenceSheet.freezePanes.freezeRows(1);
   differenceSheet.freezePanes.freezeColumns(2);
-  const differenceHeaders = ["年月", "存货编码", "存货名称", "规格", "用友U8月度发出金额（剔除后）", "CAATS发出金额", "发出金额差异（U8剔除后-CAATS）", "结果状态", "主要差异原因"];
-  differenceSheet.getRange("A1:I1").values = [differenceHeaders];
-  differenceSheet.getRange("A1:I1").format = headerFormat(palette.issueHeader);
-  const differenceValues = data.difference_rows.map((row) => [row.month, row.code, row.name, row.spec, row.u8_filtered_issue_amount, row.caats_issue, row.issue_diff, row.status, row.reason]);
-  differenceSheet.getRange(`A2:I${differenceValues.length + 1}`).values = differenceValues;
+  const differenceHeaders = ["年月", "存货编码", "存货名称", "规格", "用友U8月度发出金额（剔除后）", "CAATS发出金额", "发出金额差异（U8剔除后-CAATS）", "结果状态", "主要差异原因", ...mappingHeaders];
+  differenceSheet.getRange("A1:M1").values = [differenceHeaders];
+  differenceSheet.getRange("A1:M1").format = headerFormat(palette.issueHeader);
+  const differenceValues = data.difference_rows.map((row) => [row.month, row.code, row.name, row.spec, row.u8_filtered_issue_amount, row.caats_issue, row.issue_diff, row.status, row.reason, row.material_category_code || null, row.material_category_name || null, row.account_codes || null, row.account_names || null]);
+  differenceSheet.getRange(`A2:M${differenceValues.length + 1}`).values = differenceValues;
   differenceSheet.getRange(`E2:G${differenceValues.length + 1}`).format.numberFormat = numberFormat;
   differenceSheet.getRange(`B2:B${differenceValues.length + 1}`).format.numberFormat = "0000";
-  applyTableGrid(differenceSheet, `A1:I${differenceValues.length + 1}`);
-  differenceSheet.getRange("A1:I1").format = headerFormat(palette.issueHeader);
+  applyTableGrid(differenceSheet, `A1:M${differenceValues.length + 1}`);
+  differenceSheet.getRange("A1:M1").format = headerFormat(palette.issueHeader);
   for (const column of ["A", "B", "D", "H"]) differenceSheet.getRange(`${column}1:${column}${differenceValues.length + 1}`).format.columnWidth = 15;
   differenceSheet.getRange(`C1:C${differenceValues.length + 1}`).format.columnWidth = 28;
   for (const column of ["E", "F", "G"]) differenceSheet.getRange(`${column}1:${column}${differenceValues.length + 1}`).format.columnWidth = 18;
   differenceSheet.getRange(`I1:I${differenceValues.length + 1}`).format.columnWidth = 40;
+  for (const column of ["J", "L"]) differenceSheet.getRange(`${column}1:${column}${differenceValues.length + 1}`).format.columnWidth = 18;
+  for (const column of ["K", "M"]) differenceSheet.getRange(`${column}1:${column}${differenceValues.length + 1}`).format.columnWidth = 28;
+  for (const column of ["J", "L"]) differenceSheet.getRange(`${column}2:${column}${differenceValues.length + 1}`).format.numberFormat = "@";
   applyStatusFormatting(differenceSheet, `H2:H${differenceValues.length + 1}`);
 
   continuousDifferenceSheet.showGridLines = false;
@@ -423,34 +452,38 @@ async function buildCaatsWorkbook() {
     "年月", "存货编码", "存货名称", "规格", "记录类型",
     "期初承接结存差异（U8-连续CAATS）", "本期收入金额差异（U8剔除后-CAATS）",
     "本期发出金额差异（U8剔除后-连续CAATS）", "本期期末结存差异（U8剔除后-连续CAATS）",
-    "金额滚转钩稽差异", "滚转钩稽状态", "连续结果状态", "连续起算方式",
+    "金额滚转钩稽差异", "滚转钩稽状态", "连续结果状态", "连续起算方式", ...mappingHeaders,
   ];
-  continuousDifferenceSheet.getRange("A1:M1").values = [continuousDifferenceHeaders];
-  continuousDifferenceSheet.getRange("A1:M1").format = headerFormat(palette.issueHeader);
-  continuousDifferenceSheet.getRange("A1:M1").format.rowHeight = 54;
+  continuousDifferenceSheet.getRange("A1:Q1").values = [continuousDifferenceHeaders];
+  continuousDifferenceSheet.getRange("A1:Q1").format = headerFormat(palette.issueHeader);
+  continuousDifferenceSheet.getRange("A1:Q1").format.rowHeight = 54;
   const continuousDifferenceValues = data.continuous_difference_rows.map((row) => [
     row.month, row.code, row.name, row.spec, row.record_type,
     row.continuous_begin_difference, row.income_amount_difference, row.continuous_issue_difference, row.continuous_end_difference,
     row.rollforward_check, row.rollforward_status, row.status, row.start_type,
+    row.material_category_code || null, row.material_category_name || null, row.account_codes || null, row.account_names || null,
   ]);
   if (continuousDifferenceValues.length) {
-    continuousDifferenceSheet.getRange(`A2:M${continuousDifferenceValues.length + 1}`).values = continuousDifferenceValues;
+    continuousDifferenceSheet.getRange(`A2:Q${continuousDifferenceValues.length + 1}`).values = continuousDifferenceValues;
     continuousDifferenceSheet.getRange(`F2:J${continuousDifferenceValues.length + 1}`).format.numberFormat = numberFormat;
     continuousDifferenceSheet.getRange(`B2:B${continuousDifferenceValues.length + 1}`).format.numberFormat = "0000";
-    applyTableGrid(continuousDifferenceSheet, `A1:M${continuousDifferenceValues.length + 1}`);
-    continuousDifferenceSheet.getRange("A1:M1").format = headerFormat(palette.issueHeader);
-    continuousDifferenceSheet.getRange("A1:M1").format.rowHeight = 54;
+    applyTableGrid(continuousDifferenceSheet, `A1:Q${continuousDifferenceValues.length + 1}`);
+    continuousDifferenceSheet.getRange("A1:Q1").format = headerFormat(palette.issueHeader);
+    continuousDifferenceSheet.getRange("A1:Q1").format.rowHeight = 54;
     applyStatusFormatting(continuousDifferenceSheet, `K2:L${continuousDifferenceValues.length + 1}`);
   }
   for (const column of ["A", "B", "D", "E", "K", "L"]) continuousDifferenceSheet.getRange(`${column}1:${column}${continuousDifferenceValues.length + 1}`).format.columnWidth = 15;
   continuousDifferenceSheet.getRange(`C1:C${continuousDifferenceValues.length + 1}`).format.columnWidth = 28;
   for (const column of ["F", "G", "H", "I", "J"]) continuousDifferenceSheet.getRange(`${column}1:${column}${continuousDifferenceValues.length + 1}`).format.columnWidth = 20;
   continuousDifferenceSheet.getRange(`M1:M${continuousDifferenceValues.length + 1}`).format.columnWidth = 30;
+  for (const column of ["N", "P"]) continuousDifferenceSheet.getRange(`${column}1:${column}${continuousDifferenceValues.length + 1}`).format.columnWidth = 18;
+  for (const column of ["O", "Q"]) continuousDifferenceSheet.getRange(`${column}1:${column}${continuousDifferenceValues.length + 1}`).format.columnWidth = 28;
+  for (const column of ["N", "P"]) continuousDifferenceSheet.getRange(`${column}2:${column}${continuousDifferenceValues.length + 1}`).format.numberFormat = "@";
 
   continuousSummarySheet.showGridLines = false;
-  continuousSummarySheet.getRange("A1:I1").merge();
+  continuousSummarySheet.getRange("A1:O1").merge();
   continuousSummarySheet.getRange("A1").values = [["连续滚算汇总（敏感性分析）"]];
-  continuousSummarySheet.getRange("A1:I1").format = titleFormat;
+  continuousSummarySheet.getRange("A1:O1").format = titleFormat;
   continuousSummarySheet.getRange("A3:B11").values = [
     ["指标", "结果"],
     ["完整连续面板行数", data.metrics.continuous_panel_rows],
@@ -476,11 +509,15 @@ async function buildCaatsWorkbook() {
     ["连续发出金额差异", "期间流量", "1-6月逐月求和", "否", "评价期间发出计价", "需结合期初、收入和期末桥接"],
     ["Final结存金额差异", "期末时点", "每个物料仅取6月Final", "否", "评价期末存货", "无收发月份承接上期，不跨月累计"],
   ];
-  continuousSummarySheet.getRange("D6:I8").format.borders = thinBorder;
-  continuousSummarySheet.getRange("D7:I8").format.wrapText = true;
-  const continuousSummaryHeaders = ["年月", "连续面板物料数", "用友U8月度发出金额（剔除后）", "月度独立CAATS发出", "月度独立发出差异", "连续CAATS发出", "连续发出金额差异", "连续期末结存差异", "上期差异传导影响"];
-  continuousSummarySheet.getRange("A13:I13").values = [continuousSummaryHeaders];
-  continuousSummarySheet.getRange("A13:I13").format = headerFormat(palette.tableHeader);
+  continuousSummarySheet.getRange("D9:I9").values = [["期初/结存余额", "时点余额", "期初取首月；结存取Final", "否", "展示期初及期末总体规模", "余额不跨月累计"]];
+  continuousSummarySheet.getRange("D6:I9").format.borders = thinBorder;
+  continuousSummarySheet.getRange("D7:I9").format.wrapText = true;
+  const continuousSummaryHeaders = [
+    "年月", "连续面板物料数", "用友U8月度发出金额（剔除后）", "月度独立CAATS发出", "月度独立发出差异", "连续CAATS发出", "连续发出金额差异", "连续期末结存差异", "上期差异传导影响",
+    "客户U8期初数量（合计）", "客户U8期初金额（合计）", "连续期初数量（合计）", "连续期初金额（合计）", "连续CAATS结存数量（合计）", "连续CAATS结存金额（合计）",
+  ];
+  continuousSummarySheet.getRange("A13:O13").values = [continuousSummaryHeaders];
+  continuousSummarySheet.getRange("A13:O13").format = headerFormat(palette.tableHeader);
   for (let index = 0; index < data.monthly.length; index += 1) {
     const row = 14 + index;
     const month = data.monthly[index].month;
@@ -495,18 +532,30 @@ async function buildCaatsWorkbook() {
       `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$AR$2:$AR$${continuousEnd})`,
       `=G${row}-E${row}`,
     ]];
+    continuousSummarySheet.getRange(`J${row}:O${row}`).formulas = [[
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$AY$2:$AY$${continuousEnd})`,
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$AZ$2:$AZ$${continuousEnd})`,
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$J$2:$J$${continuousEnd})`,
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$L$2:$L$${continuousEnd})`,
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$AT$2:$AT$${continuousEnd})`,
+      `=SUMIF('${continuousDetailName}'!$B$2:$B$${continuousEnd},A${row},'${continuousDetailName}'!$AQ$2:$AQ$${continuousEnd})`,
+    ]];
   }
   const continuousTotalRow = data.monthly.length + 14;
-  continuousSummarySheet.getRange(`A${continuousTotalRow}:I${continuousTotalRow}`).values = [["合计/Final", null, null, null, null, null, null, null, null]];
+  continuousSummarySheet.getRange(`A${continuousTotalRow}:O${continuousTotalRow}`).values = [["合计/Final", null, null, null, null, null, null, null, null, null, null, null, null, null, null]];
   continuousSummarySheet.getRange(`B${continuousTotalRow}:I${continuousTotalRow}`).formulas = [[
     `=B${continuousTotalRow - 1}`, `=SUM(C14:C${continuousTotalRow - 1})`, `=SUM(D14:D${continuousTotalRow - 1})`, `=SUM(E14:E${continuousTotalRow - 1})`, `=SUM(F14:F${continuousTotalRow - 1})`, `=SUM(G14:G${continuousTotalRow - 1})`, `=H${continuousTotalRow - 1}`, `=SUM(I14:I${continuousTotalRow - 1})`,
   ]];
-  continuousSummarySheet.getRange(`A13:I${continuousTotalRow}`).format.borders = thinBorder;
-  continuousSummarySheet.getRange(`C14:I${continuousTotalRow}`).format.numberFormat = numberFormat;
-  continuousSummarySheet.getRange(`A${continuousTotalRow}:I${continuousTotalRow}`).format.font = { bold: true };
+  continuousSummarySheet.getRange(`J${continuousTotalRow}:O${continuousTotalRow}`).formulas = [[
+    "=J14", "=K14", "=L14", "=M14", `=N${continuousTotalRow - 1}`, `=O${continuousTotalRow - 1}`,
+  ]];
+  continuousSummarySheet.getRange(`A13:O${continuousTotalRow}`).format.borders = thinBorder;
+  continuousSummarySheet.getRange(`C14:O${continuousTotalRow}`).format.numberFormat = numberFormat;
+  continuousSummarySheet.getRange(`A${continuousTotalRow}:O${continuousTotalRow}`).format.font = { bold: true };
   continuousSummarySheet.getRange("A1:A22").format.columnWidth = 24;
   continuousSummarySheet.getRange("B1:B22").format.columnWidth = 18;
   continuousSummarySheet.getRange("C1:I22").format.columnWidth = 20;
+  continuousSummarySheet.getRange("J1:O22").format.columnWidth = 20;
 
   offsetSheet.showGridLines = false;
   offsetSheet.freezePanes.freezeRows(9);
@@ -552,14 +601,14 @@ async function buildCaatsWorkbook() {
   for (const column of ["E", "F", "J", "K", "L", "M", "N", "O", "P", "Q"]) offsetSheet.getRange(`${column}1:${column}${Math.max(20, offsetValues.length + 9)}`).format.columnWidth = 18;
 
   if (!skipQa) {
-    await saveInspection(workbook, "caats", [["01_物料月维度明细", "A1:AW20"], ["02_物料月维度结果汇总", "A1:I18"], ["03_连续滚算明细", "A1:BD20"], ["04_连续滚算汇总", "A1:I20"], [independentDifferenceName, "A1:I20"], [continuousDifferenceName, "A1:M20"]]);
+    await saveInspection(workbook, "caats", [["01_物料月维度明细", "A1:BA20"], ["02_物料月维度结果汇总", "A1:M18"], ["03_连续滚算明细", "A1:BH20"], ["04_连续滚算汇总", "A1:O20"], [independentDifferenceName, "A1:M20"], [continuousDifferenceName, "A1:Q20"]]);
     await renderSheets(workbook, "caats", [
-      ["01_物料月维度明细", "A1:AW24", 0.6],
-      ["02_物料月维度结果汇总", "A1:I18", 1.0],
-      ["03_连续滚算明细", "A1:BD24", 0.56],
-      ["04_连续滚算汇总", "A1:I20", 0.95],
-      [independentDifferenceName, "A1:I24", 0.95],
-      [continuousDifferenceName, "A1:M24", 0.8],
+      ["01_物料月维度明细", "A1:BA24", 0.57],
+      ["02_物料月维度结果汇总", "A1:M18", 0.82],
+      ["03_连续滚算明细", "A1:BH24", 0.53],
+      ["04_连续滚算汇总", "A1:O20", 0.72],
+      [independentDifferenceName, "A1:M24", 0.82],
+      [continuousDifferenceName, "A1:Q24", 0.74],
       ["07_跨仓抵销", "A1:Q22", 0.8],
     ]);
   }

@@ -1,15 +1,15 @@
 import fs from "node:fs/promises";
 import { FileBlob, SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
-const projectRoot = process.env.U8_PROJECT_ROOT;
+const inputDir = process.env.U8_INPUT_DIR;
 const outputDir = process.env.U8_OUTPUT_DIR;
 const qaDir = process.env.U8_QA_DIR;
 const dataPath = process.env.U8_DATA_JSON;
 const buildPart = process.env.U8_BUILD_PART || "caats";
 const skipQa = process.env.U8_SKIP_QA === "1";
 
-if (!projectRoot || !outputDir || !qaDir || !dataPath) {
-  throw new Error("缺少U8_PROJECT_ROOT/U8_OUTPUT_DIR/U8_QA_DIR/U8_DATA_JSON环境变量");
+if (!inputDir || !outputDir || !qaDir || !dataPath) {
+  throw new Error("缺少U8_INPUT_DIR/U8_OUTPUT_DIR/U8_QA_DIR/U8_DATA_JSON环境变量");
 }
 
 await fs.mkdir(outputDir, { recursive: true });
@@ -167,7 +167,7 @@ async function renderSheets(workbook, name, specs) {
 }
 
 async function buildCaatsWorkbook() {
-  const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(`${projectRoot}/CAATS交付模板.xlsx`));
+  const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(`${inputDir}/CAATS交付模板.xlsx`));
   const resultSheet = workbook.worksheets.getItem("Sheet2");
   const resultSheetName = "01_物料月维度明细";
   const continuousDetailName = "03_连续滚算明细";

@@ -223,6 +223,114 @@ def read_master(path: Path) -> tuple[
     return master, by_name, by_code
 
 
+def read_material_mapping(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """读取物料类别映射；物料编码是唯一键，不根据名称或编码前缀推断缺失类别。"""
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    worksheet = workbook.active
+    rows = worksheet.iter_rows(values_only=True)
+    headers = list(next(rows))
+    index = required_columns(
+        headers,
+        ["物料编码", "物料名称", "规格", "物料类别编码", "物料类别名称"],
+        path.name,
+    )
+    result: list[dict[str, Any]] = []
+    by_code: dict[str, dict[str, Any]] = {}
+    for source_row, row in enumerate(rows, start=2):
+        code = text(row[index["物料编码"]])
+        if not code:
+            continue
+        record = {
+            "code": code,
+            "name": text(row[index["物料名称"]]),
+            "spec": text(row[index["规格"]]),
+            "category_code": text(row[index["物料类别编码"]]),
+            "category_name": text(row[index["物料类别名称"]]),
+            "source_row": source_row,
+        }
+        if code in by_code:
+            raise ValueError(f"物料类别映射物料编码重复：{code}")
+        if not record["category_code"] or not record["category_name"]:
+            raise ValueError(f"物料类别映射类别为空：{code}")
+        result.append(record)
+        by_code[code] = record
+    return result, by_code
+
+
+def read_account_rules(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """读取仓库+存货类别科目规则；空类别为该仓库默认规则。"""
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    worksheet = workbook.active
+    rows = worksheet.iter_rows(values_only=True)
+    headers = list(next(rows))
+    required = [
+        "仓库编码", "仓库名称", "存货分类编码", "存货分类名称", "存货科目编码", "存货科目名称",
+        "分期收款发出商品科目编码", "分期收款发出商品科目名称",
+    ]
+    index = required_columns(headers, required, path.name)
+    result: list[dict[str, Any]] = []
+    by_warehouse: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    for source_row, row in enumerate(rows, start=2):
+        warehouse_code = text(row[index["仓库编码"]])
+        if not warehouse_code:
+            continue
+        record = {
+            "warehouse_code": warehouse_code,
+            "warehouse_name": text(row[index["仓库名称"]]),
+            "category_prefix": text(row[index["存货分类编码"]]),
+            "category_rule_name": text(row[index["存货分类名称"]]),
+            "account_code": text(row[index["存货科目编码"]]),
+            "account_name": text(row[index["存货科目名称"]]),
+            "installment_account_code": text(row[index["分期收款发出商品科目编码"]]),
+            "installment_account_name": text(row[index["分期收款发出商品科目名称"]]),
+            "source_row": source_row,
+        }
+        key = (warehouse_code, record["category_prefix"])
+        if key in seen:
+            raise ValueError(f"存货科目规则重复：仓库={warehouse_code}，类别前缀={record['category_prefix'] or '(默认)'}")
+        seen[key] = record
+        result.append(record)
+        by_warehouse[warehouse_code].append(record)
+    for rules in by_warehouse.values():
+        rules.sort(key=lambda item: len(item["category_prefix"]), reverse=True)
+    return result, by_warehouse
+
+
+def match_inventory_account(
+    warehouse_code: str,
+    category_code: str,
+    rules_by_warehouse: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """同仓库先取最长类别前缀，再取空类别默认规则；类别缺失时不猜测。"""
+    rules = rules_by_warehouse.get(warehouse_code, [])
+    if not rules:
+        return {"account_match_status": "无科目规则", "account_match_method": ""}
+    specific = [rule for rule in rules if rule["category_prefix"]]
+    default = next((rule for rule in rules if not rule["category_prefix"]), None)
+    matched = None
+    method = ""
+    if category_code:
+        matched = next((rule for rule in specific if category_code.startswith(rule["category_prefix"])), None)
+        if matched is not None:
+            method = f"类别前缀匹配（{matched['category_prefix']}）"
+        elif default is not None:
+            matched = default
+            method = "仓库默认"
+    elif default is not None:
+        matched = default
+        method = "仓库默认"
+    elif specific:
+        return {"account_match_status": "类别缺失待补充", "account_match_method": ""}
+    if matched is None:
+        return {"account_match_status": "无适用科目规则", "account_match_method": ""}
+    return {
+        **matched,
+        "account_match_status": "已匹配",
+        "account_match_method": method,
+    }
+
+
 def read_summaries(paths: list[Path], periods: list[str]) -> tuple[list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:
     summaries: list[dict[str, Any]] = []
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
@@ -458,6 +566,10 @@ def build_continuous_analysis(
                     "code": record["code"],
                     "name": record.get("name", ""),
                     "spec": record.get("spec", ""),
+                    "material_category_code": record.get("material_category_code", ""),
+                    "material_category_name": record.get("material_category_name", ""),
+                    "account_codes": record.get("account_codes", ""),
+                    "account_names": record.get("account_names", ""),
                     "u8_begin_quantity": record["期初数量"],
                     "u8_begin_amount": record["期初金额"],
                     "continuous_begin_quantity": begin_quantity,
@@ -605,10 +717,16 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     summary_dir = (args.summary_dir or input_dir / "收发存汇总").resolve()
     warehouse_master_source = args.warehouse_master.resolve()
     warehouse_master_path = convert_xls(warehouse_master_source, converted_dir / "warehouse_master", args.soffice)
+    material_mapping_source = args.material_mapping.resolve()
+    account_mapping_source = args.account_mapping.resolve()
+    material_mapping_path = convert_xls(material_mapping_source, converted_dir / "material_mapping", args.soffice)
+    account_mapping_path = convert_xls(account_mapping_source, converted_dir / "account_mapping", args.soffice)
     summary_sources = sorted(path for path in summary_dir.iterdir() if path.suffix.lower() in {".xls", ".xlsx"})
     converted_summaries = [convert_xls(path, converted_dir / "summaries", args.soffice) for path in summary_sources]
 
     master, master_by_name, master_by_code = read_master(warehouse_master_path)
+    _, material_mapping_by_code = read_material_mapping(material_mapping_path)
+    _, account_rules_by_warehouse = read_account_rules(account_mapping_path)
     summaries, summary_by_key = read_summaries(converted_summaries, periods)
 
     workbook = load_workbook(ledger_path, read_only=True, data_only=True)
@@ -807,6 +925,14 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             "oa": aggregate.get("oa", 0) - aggregate.get("excluded_posted_oa", 0),
         }
         item = apply_movement_exclusions(record, included, excluded, excluded_posted)
+        material_mapping = material_mapping_by_code.get(record["code"])
+        item.update(
+            {
+                "material_category_code": material_mapping["category_code"] if material_mapping else "",
+                "material_category_name": material_mapping["category_name"] if material_mapping else "",
+                "material_mapping_source_row": material_mapping["source_row"] if material_mapping else None,
+            }
+        )
         denominator = item["期初数量"] + included["iq"]
         average = (item["期初金额"] + included["ia"]) / denominator if abs(denominator) > 1e-12 else 0.0
         calculated_issue = included["oq"] * average
@@ -873,6 +999,12 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             continue
         warehouse_master = master_by_name[warehouse]
         summary = summary_by_key.get((month, code), {})
+        material_mapping = material_mapping_by_code.get(code)
+        account_mapping = match_inventory_account(
+            warehouse_master["仓库编码"],
+            material_mapping["category_code"] if material_mapping else "",
+            account_rules_by_warehouse,
+        )
         warehouse_rows.append(
             {
                 "month": month,
@@ -886,6 +1018,11 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                 "name": summary.get("name", ""),
                 "spec": summary.get("spec", ""),
                 "unit": summary.get("unit", ""),
+                "material_category_code": material_mapping["category_code"] if material_mapping else "",
+                "material_category_name": material_mapping["category_name"] if material_mapping else "",
+                "account_code": account_mapping.get("account_code", ""),
+                "account_name": account_mapping.get("account_name", ""),
+                "account_match_status": account_mapping.get("account_match_status", ""),
                 "posted_rows": aggregate.get("posted_rows", 0),
                 "unposted_rows": aggregate.get("unposted_rows", 0),
                 "posted_no_cost_rows": aggregate.get("posted_no_cost_rows", 0),
@@ -925,6 +1062,30 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                 "mat_sum_oq": material_aggregate.get((month, code), {}).get("oq", 0),
             }
         )
+
+    # 按物料汇总其在全期间已记账成本仓中实际涉及的存货科目。
+    # 多科目时去重后以顿号合并，未匹配时留空，不输出状态字段。
+    account_rows_by_material: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in warehouse_rows:
+        if row["costed"] == "是" and row["posted_rows"]:
+            account_rows_by_material[row["code"]].append(row)
+    for row in material_rows:
+        candidates = account_rows_by_material.get(row["code"], [])
+        account_codes = sorted({item["account_code"] for item in candidates if item["account_code"]})
+        account_names = sorted({item["account_name"] for item in candidates if item["account_name"]})
+        row.update(
+            {
+                "account_codes": "、".join(account_codes),
+                "account_names": "、".join(account_names),
+            }
+        )
+
+    # 物料类别为空时，用已匹配的存货科目兜底填充物料类别（编码+名称），并标记来源
+    for row in material_rows:
+        if not row["material_category_code"] and row["account_codes"]:
+            row["material_category_code"] = row["account_codes"]
+            row["material_category_name"] = row["account_names"]
+            row["material_category_fallback"] = True
 
     group_rows: list[dict[str, Any]] = []
     for (month, group, code), aggregate in sorted(group_aggregate.items()):
@@ -1030,8 +1191,15 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "excluded_income_amount_bridge": sum(row["收入金额"] - row["u8_filtered_income_amount"] for row in material_rows),
         "excluded_issue_quantity_bridge": sum(row["发出数量"] - row["u8_filtered_issue_quantity"] for row in material_rows),
         "excluded_issue_bridge": sum(row["发出金额"] - row["u8_filtered_issue_amount"] for row in material_rows),
+        "material_mapping_total_codes": len({row["code"] for row in material_rows}),
+        "material_mapping_matched_codes": len({row["code"] for row in material_rows if row["material_category_code"]}),
+        "material_mapping_missing_codes": sorted({row["code"] for row in material_rows if not row["material_category_code"]}),
+        "account_mapping_total_rows": len(warehouse_rows),
+        "account_mapping_matched_rows": sum(row["account_match_status"] == "已匹配" for row in warehouse_rows),
+        "account_mapping_unresolved_rows": sum(row["account_match_status"] != "已匹配" for row in warehouse_rows),
+        "account_mapping_multi_materials": len({row["code"] for row in material_rows if "、" in row["account_codes"]}),
     }
-    input_files = [ledger_path, warehouse_master_source, *summary_sources, input_dir / "CAATS交付模板.xlsx"]
+    input_files = [ledger_path, warehouse_master_source, material_mapping_source, account_mapping_source, *summary_sources, input_dir / "CAATS交付模板.xlsx"]
     source_manifest = [
         {"role": "输入文件", "path": str(path), "name": path.name, "size": path.stat().st_size, "sha256": sha256(path)}
         for path in input_files
@@ -1086,6 +1254,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--ledger", type=Path)
     parser.add_argument("--summary-dir", type=Path)
+    parser.add_argument("--material-mapping", type=Path, required=True)
+    parser.add_argument("--account-mapping", type=Path, required=True)
     return parser.parse_args()
 
 

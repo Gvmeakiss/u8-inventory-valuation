@@ -51,16 +51,20 @@ async function verifyWorkbook(kind, path) {
     const independentDifferenceHeaders = independentDifferenceSheet.getRange("A1:I1").values[0];
     const continuousDifferenceHeaders = continuousDifferenceSheet.getRange("A1:M1").values[0];
     const independentSheet = workbook.worksheets.getItem("01_物料月维度明细");
-    const independentHeaders = independentSheet.getRange("A1:AW1").values[0];
+    const independentHeaders = independentSheet.getRange("A1:BA1").values[0];
     const continuousSheet = workbook.worksheets.getItem("03_连续滚算明细");
-    const continuousHeaders = continuousSheet.getRange("A1:BD1").values[0];
+    const continuousHeaders = continuousSheet.getRange("A1:BH1").values[0];
+    const independentSummary = workbook.worksheets.getItem("02_物料月维度结果汇总");
+    const independentSummaryHeaders = independentSummary.getRange("A12:M12").values[0];
+    const continuousSummary = workbook.worksheets.getItem("04_连续滚算汇总");
+    const continuousSummaryHeaders = continuousSummary.getRange("A13:O13").values[0];
     if (continuousRows < independentRows) throw new Error(`完整连续面板不应少于原始月度明细：独立=${independentRows}，连续=${continuousRows}`);
     if (independentDifferenceRows !== reviewRows) throw new Error(`05月度独立差异明细与01 REVIEW数量不一致：明细=${independentDifferenceRows}，REVIEW=${reviewRows}`);
     if (independentDifferenceHeaders.some((value) => String(value || "").includes("绝对差异"))) throw new Error("05月度独立差异明细仍包含绝对差异字段");
     if (continuousDifferenceHeaders.some((value) => String(value || "").includes("绝对差异"))) throw new Error("06连续滚算差异明细不应包含绝对差异字段");
     if (continuousDifferenceHeaders[7] !== "本期发出金额差异（U8剔除后-连续CAATS）" || continuousDifferenceHeaders[8] !== "本期期末结存差异（U8剔除后-连续CAATS）") throw new Error("06连续滚算差异明细标题未明确对应03口径");
-    if (independentHeaders.length !== 49) throw new Error(`01明细应至AW列，实际列数=${independentHeaders.length}`);
-    if (continuousHeaders.length !== 56) throw new Error(`03明细应至BD列，实际列数=${continuousHeaders.length}`);
+    if (independentHeaders.length !== 53) throw new Error(`01明细应至BA列，实际列数=${independentHeaders.length}`);
+    if (continuousHeaders.length !== 60) throw new Error(`03明细应至BH列，实际列数=${continuousHeaders.length}`);
     if (independentHeaders[12] !== "用友U8月度收入数量" || independentHeaders[13] !== "剔除收入数量" || independentHeaders[14] !== "用友U8月度收入数量（剔除后）" || independentHeaders[15] !== "CAATS计入收入数量") throw new Error("01明细收入数量字段未形成U8原值-剔除-剔除后-CAATS桥接");
     if (independentHeaders[18] !== "用友U8月度收入金额" || independentHeaders[19] !== "剔除收入金额" || independentHeaders[21] !== "用友U8月度收入金额（剔除后）") throw new Error("01明细收入金额字段未明确剔除桥");
     if (independentHeaders[24] !== "用友U8月度发出数量" || independentHeaders[25] !== "剔除发出数量" || independentHeaders[26] !== "用友U8月度发出数量（剔除后）") throw new Error("01明细发出数量字段未明确剔除桥");
@@ -68,12 +72,34 @@ async function verifyWorkbook(kind, path) {
     if (independentHeaders[38] !== "用友U8月度结存金额" || independentHeaders[41] !== "用友U8月度结存金额（剔除后）" || independentHeaders[43] !== "结存金额差异（U8剔除后-CAATS）") throw new Error("01明细结存字段未按U8剔除后-CAATS展示");
     if (continuousHeaders[49] !== "记录类型" || continuousHeaders[53] !== "期初承接结存差异（U8-连续CAATS）" || continuousHeaders[54] !== "金额滚转钩稽差异" || continuousHeaders[55] !== "金额滚转钩稽状态") throw new Error("03明细完整月份及滚转钩稽字段不正确");
     if (continuousHeaders[43] !== "结存金额差异（U8剔除后-连续CAATS）") throw new Error("03明细结存差异方向不正确");
+    if (independentHeaders[49] !== "物料类别编码" || independentHeaders[50] !== "物料类别名称" || independentHeaders[51] !== "存货科目编码" || independentHeaders[52] !== "存货科目名称") throw new Error("01明细物料类别/存货科目字段不完整");
+    if (continuousHeaders[56] !== "物料类别编码" || continuousHeaders[57] !== "物料类别名称" || continuousHeaders[58] !== "存货科目编码" || continuousHeaders[59] !== "存货科目名称") throw new Error("03明细物料类别/存货科目字段不完整");
+    if (JSON.stringify(independentSummaryHeaders.slice(9, 13)) !== JSON.stringify(["客户U8期初数量（合计）", "客户U8期初金额（合计）", "CAATS结存数量（合计）", "CAATS结存金额（合计）"])) throw new Error("02汇总未完整展示期初及结存数量金额合计");
+    if (JSON.stringify(continuousSummaryHeaders.slice(9, 15)) !== JSON.stringify(["客户U8期初数量（合计）", "客户U8期初金额（合计）", "连续期初数量（合计）", "连续期初金额（合计）", "连续CAATS结存数量（合计）", "连续CAATS结存金额（合计）"])) throw new Error("04汇总未完整展示客户U8期初、连续期初及连续结存数量金额合计");
     const allCaatsHeaders = [independentHeaders, continuousHeaders, independentDifferenceHeaders, continuousDifferenceHeaders, workbook.worksheets.getItem("02_物料月维度结果汇总").getUsedRange(true).values.flat(), workbook.worksheets.getItem("04_连续滚算汇总").getUsedRange(true).values.flat(), workbook.worksheets.getItem("07_跨仓抵销").getRange("A1:Q9").values.flat()].flat();
+    if (allCaatsHeaders.some((value) => String(value || "").includes("物料类别映射状态"))) throw new Error("CAATS结果表仍存在物料类别映射状态字段");
     if (allCaatsHeaders.some((value) => String(value || "").includes("绝对值") || String(value || "").includes("绝对差异"))) throw new Error("CAATS结果表仍存在面向审阅人的绝对值差异展示");
     const key = (code, month) => `${String(code)}|${String(month)}`;
     const near = (left, right) => Math.abs(Number(left || 0) - Number(right || 0)) <= 0.000001;
     const independentValues = independentSheet.getUsedRange(true).values.slice(1);
     const continuousValues = continuousSheet.getUsedRange(true).values.slice(1);
+    const summaryPeriodList = [...new Set(independentValues.map((row) => String(row[1])))].sort();
+    const independentSummaryRows = independentSummary.getRange(`A13:M${12 + summaryPeriodList.length}`).values;
+    const continuousSummaryRows = continuousSummary.getRange(`A14:O${13 + summaryPeriodList.length}`).values;
+    for (const row of independentSummaryRows) {
+      const month = String(row[0]);
+      const sourceRows = independentValues.filter((source) => String(source[1]) === month);
+      const expected = [9, 11, 45, 42].map((index) => sourceRows.reduce((sum, source) => sum + Number(source[index] || 0), 0));
+      if ([9, 10, 11, 12].some((index, offset) => !near(row[index], expected[offset]))) throw new Error(`02期初及结存合计未与01钩稽：${month}`);
+    }
+    for (const row of continuousSummaryRows) {
+      const month = String(row[0]);
+      const sourceRows = continuousValues.filter((source) => String(source[1]) === month);
+      const expected = [50, 51, 9, 11, 45, 42].map((index) => sourceRows.reduce((sum, source) => sum + Number(source[index] || 0), 0));
+      if ([9, 10, 11, 12, 13, 14].some((index, offset) => !near(row[index], expected[offset]))) throw new Error(`04客户U8期初、连续期初及连续结存合计未与03钩稽：${month}`);
+    }
+    const continuousSummaryFinalRow = continuousSummary.getRange(`A${14 + summaryPeriodList.length}:O${14 + summaryPeriodList.length}`).values[0];
+    if (!near(continuousSummaryFinalRow[9], continuousSummaryRows[0][9]) || !near(continuousSummaryFinalRow[10], continuousSummaryRows[0][10]) || !near(continuousSummaryFinalRow[11], continuousSummaryRows[0][11]) || !near(continuousSummaryFinalRow[12], continuousSummaryRows[0][12]) || !near(continuousSummaryFinalRow[13], continuousSummaryRows.at(-1)[13]) || !near(continuousSummaryFinalRow[14], continuousSummaryRows.at(-1)[14])) throw new Error("04合计/Final行未按首月客户U8/连续期初及Final连续结存展示余额");
     for (const [index, label] of [[13, "剔除收入数量"], [19, "剔除收入金额"], [25, "剔除发出数量"], [31, "剔除发出金额"]]) {
       const independentTotal = independentValues.reduce((sum, row) => sum + Number(row[index] || 0), 0);
       const continuousTotal = continuousValues.reduce((sum, row) => sum + Number(row[index] || 0), 0);
@@ -152,7 +178,6 @@ async function verifyWorkbook(kind, path) {
       if (!near(Number(row[30] || 0) - Number(row[31] || 0), row[33])) throw new Error("03发出金额未按U8原值-剔除=剔除后钩稽");
       if (!near(Number(row[41] || 0) - Number(row[42] || 0), row[43])) throw new Error("03结存金额未按U8剔除后-连续CAATS钩稽");
     }
-    const continuousSummary = workbook.worksheets.getItem("04_连续滚算汇总");
     const finalEndDifference = finalRows.reduce((sum, row) => sum + Number(row[43] || 0), 0);
     const finalSyntheticRows = finalRows.filter((row) => row[49] === "补齐无收发月份").length;
     if (Number(continuousSummary.getRange("B4").values[0][0]) !== continuousRows) throw new Error("04完整连续面板行数未与03钩稽");

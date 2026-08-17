@@ -554,8 +554,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     special_document_types = set(config["special_document_types"])
     excluded_movement_categories = set(config.get("excluded_movement_categories", []))
 
-    ledger_path = (args.ledger or project_root / "仓库管理-出入库流水账-2026.01-06.xlsx").resolve()
-    summary_dir = (args.summary_dir or project_root / "收发存汇总").resolve()
+    input_dir = project_root / "input" / "current"
+    ledger_path = (args.ledger or input_dir / "仓库管理-出入库流水账-2026.01-06.xlsx").resolve()
+    summary_dir = (args.summary_dir or input_dir / "收发存汇总").resolve()
     warehouse_master_source = args.warehouse_master.resolve()
     warehouse_master_path = convert_xls(warehouse_master_source, converted_dir / "warehouse_master", args.soffice)
     summary_sources = sorted(path for path in summary_dir.iterdir() if path.suffix.lower() in {".xls", ".xlsx"})
@@ -964,7 +965,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "excluded_issue_quantity_bridge": sum(row["发出数量"] - row["u8_filtered_issue_quantity"] for row in material_rows),
         "excluded_issue_bridge": sum(row["发出金额"] - row["u8_filtered_issue_amount"] for row in material_rows),
     }
-    input_files = [ledger_path, warehouse_master_source, *summary_sources, project_root / "CAATS交付模板.xlsx"]
+    input_files = [ledger_path, warehouse_master_source, *summary_sources, input_dir / "CAATS交付模板.xlsx"]
     source_manifest = [
         {"role": "输入文件", "path": str(path), "name": path.name, "size": path.stat().st_size, "sha256": sha256(path)}
         for path in input_files

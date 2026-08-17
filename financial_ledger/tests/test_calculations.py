@@ -12,6 +12,36 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CalculationTests(unittest.TestCase):
+    def test_inventory_account_uses_longest_category_prefix_then_default(self):
+        rules = {
+            "59": [
+                {"category_prefix": "0600", "account_code": "14050101", "source_row": 2},
+                {"category_prefix": "06", "account_code": "140501", "source_row": 3},
+                {"category_prefix": "", "account_code": "140301", "source_row": 4},
+            ]
+        }
+        rules["59"].sort(key=lambda item: len(item["category_prefix"]), reverse=True)
+        exact = MODULE.match_inventory_account("59", "060001", rules)
+        fallback = MODULE.match_inventory_account("59", "030001", rules)
+        missing_category = MODULE.match_inventory_account("59", "", rules)
+        self.assertEqual(exact["account_code"], "14050101")
+        self.assertEqual(exact["account_match_method"], "类别前缀匹配（0600）")
+        self.assertEqual(fallback["account_code"], "140301")
+        self.assertEqual(fallback["account_match_method"], "仓库默认")
+        # 无类别但有默认规则时，应落到默认科目
+        self.assertEqual(missing_category["account_code"], "140301")
+        self.assertEqual(missing_category["account_match_method"], "仓库默认")
+
+        # 无类别且无默认规则（仅有特定规则）时，才返回类别缺失待补充
+        no_default = {
+            "12": [
+                {"category_prefix": "06", "account_code": "140501", "source_row": 3},
+            ]
+        }
+        no_default["12"].sort(key=lambda item: len(item["category_prefix"]), reverse=True)
+        unresolved = MODULE.match_inventory_account("12", "", no_default)
+        self.assertEqual(unresolved["account_match_status"], "类别缺失待补充")
+
     def test_financial_ledger_period_uses_posting_date_value(self):
         self.assertEqual(MODULE.month_from_date_value("2026/6/30", "记账日期"), "202606")
         self.assertEqual(MODULE.month_from_date_value("2026-02-28", "记账日期"), "202602")
